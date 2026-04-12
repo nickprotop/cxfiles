@@ -1,5 +1,6 @@
 using System.Drawing;
 using SharpConsoleUI;
+using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
 using SharpConsoleUI.Drawing;
 using SharpConsoleUI.Events;
@@ -14,16 +15,23 @@ namespace CXFiles.UI;
 internal class OperationsPortal : PortalContentContainer
 {
     private readonly OperationManager _operations;
-    private readonly MarkupControl _content;
+    private readonly ConsoleWindowSystem _ws;
+    private readonly ScrollablePanelControl _scrollPanel;
+    private readonly MarkupControl _headerLabel;
+    private readonly MarkupControl _footerLabel;
 
     private static readonly Color PanelBg = Color.Grey11;
     private static readonly Color PanelFg = Color.Grey93;
+    private static readonly Color RowBg = new(30, 35, 50);
+    private static readonly Color ProgressFilled = new(0, 180, 220);
+    private static readonly Color ProgressEmpty = Color.Grey23;
 
     public event EventHandler? Dismissed;
 
-    public OperationsPortal(OperationManager operations, int anchorX, int anchorY,
-        int windowWidth, int windowHeight)
+    public OperationsPortal(ConsoleWindowSystem ws, OperationManager operations,
+        int anchorX, int anchorY, int windowWidth, int windowHeight)
     {
+        _ws = ws;
         _operations = operations;
 
         BackgroundColor = PanelBg;
@@ -33,16 +41,38 @@ internal class OperationsPortal : PortalContentContainer
         BorderColor = Color.Grey50;
         BorderBackgroundColor = PanelBg;
 
-        _content = new MarkupControl(new List<string>());
-        _content.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _headerLabel = new MarkupControl(new List<string> { "[bold]Operations[/]" });
+        _headerLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _headerLabel.Margin = new Margin(1, 0, 1, 0);
 
-        AddChild(_content);
-        UpdateContent();
+        var headerRule = Controls.Rule();
+        headerRule.Color = Color.Grey27;
+
+        _scrollPanel = Controls.ScrollablePanel()
+            .WithVerticalScroll()
+            .WithMouseWheel()
+            .WithBackgroundColor(PanelBg)
+            .Build();
+        _scrollPanel.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _scrollPanel.VerticalAlignment = VerticalAlignment.Fill;
+        _scrollPanel.ShowScrollbar = true;
+        _scrollPanel.ScrollbarPosition = ScrollbarPosition.Right;
+
+        _footerLabel = new MarkupControl(new List<string> { "[dim]Esc: Close[/]" });
+        _footerLabel.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _footerLabel.Margin = new Margin(1, 0, 1, 0);
+
+        AddChild(_headerLabel);
+        AddChild(headerRule);
+        AddChild(_scrollPanel);
+        AddChild(_footerLabel);
+
+        RebuildOperationRows();
 
         _operations.OperationsChanged += OnOperationsChanged;
 
-        int popupW = 45;
-        int popupH = Math.Max(5, Math.Min(operations.TotalCount * 2 + 4, 18));
+        int popupW = 50;
+        int popupH = Math.Max(8, Math.Min(operations.TotalCount * 4 + 6, 22));
 
         var pos = PortalPositioner.CalculateFromPoint(
             new Point(anchorX, anchorY),
@@ -55,79 +85,132 @@ internal class OperationsPortal : PortalContentContainer
 
     private void OnOperationsChanged()
     {
-        UpdateContent();
-        Container?.Invalidate(true);
+        _ws.EnqueueOnUIThread(() =>
+        {
+            RebuildOperationRows();
+            Container?.Invalidate(true);
+        });
     }
 
-    private void UpdateContent()
+    private void RebuildOperationRows()
     {
+        _scrollPanel.ClearContents();
         var ops = _operations.Operations;
         var running = _operations.RunningOperations;
-        var lines = new List<string>();
-
-        lines.Add("[bold]Operations[/]");
-        lines.Add("");
 
         if (ops.Count == 0)
         {
-            lines.Add("[dim]No recent operations[/]");
+            var empty = new MarkupControl(new List<string> { "[dim]No recent operations[/]" });
+            empty.Margin = new Margin(1, 1, 1, 0);
+            _scrollPanel.AddControl(empty);
         }
         else
         {
-            int runningIdx = 0;
             foreach (var op in ops)
-            {
-                var icon = op.Status switch
-                {
-                    OperationStatus.Running => "[yellow]⟳[/]",
-                    OperationStatus.Completed => "[green]✓[/]",
-                    OperationStatus.Failed => "[red]✗[/]",
-                    OperationStatus.Cancelled => "[dim]○[/]",
-                    _ => " "
-                };
-
-                var desc = SharpConsoleUI.Parsing.MarkupParser.Escape(op.Description);
-                if (desc.Length > 28) desc = desc[..25] + "...";
-
-                if (op.Status == OperationStatus.Running)
-                {
-                    runningIdx++;
-                    var bar = BuildProgressBar(op.ProgressPercent, 10);
-                    var cancelHint = runningIdx <= 9 ? $" [dim]^{runningIdx}:Cancel[/]" : "";
-                    lines.Add($" {icon} {desc}{cancelHint}");
-                    lines.Add($"   {bar} {op.StatusText}");
-                }
-                else
-                {
-                    var elapsed = op.EndTime.HasValue
-                        ? $" ({(op.EndTime.Value - op.StartTime).TotalSeconds:F0}s)"
-                        : "";
-                    lines.Add($" {icon} {desc} [dim]{op.StatusText}{elapsed}[/]");
-
-                    if (op.Status == OperationStatus.Failed && op.ErrorMessage != null)
-                    {
-                        var err = op.ErrorMessage.Length > 33
-                            ? op.ErrorMessage[..30] + "..."
-                            : op.ErrorMessage;
-                        lines.Add($"   [red dim]{SharpConsoleUI.Parsing.MarkupParser.Escape(err)}[/]");
-                    }
-                }
-            }
+                _scrollPanel.AddControl(BuildOperationRow(op));
         }
 
-        lines.Add("");
+        var footerLines = new List<string>();
         if (running.Count > 0)
-            lines.Add("[dim]^1-^9: Cancel operation  Esc: Close[/]");
+            footerLines.Add("[dim]Esc: Close[/]");
         else
-            lines.Add("[dim]Esc: Close[/]");
+            footerLines.Add("[dim]Esc: Close[/]");
+        _footerLabel.SetContent(footerLines);
+    }
 
-        _content.SetContent(lines);
+    private IWindowControl BuildOperationRow(FileOperation op)
+    {
+        var panel = Controls.ScrollablePanel()
+            .WithBackgroundColor(RowBg)
+            .Build();
+        panel.HorizontalAlignment = HorizontalAlignment.Stretch;
+        panel.Padding = new Padding(1, 0, 1, 0);
+        panel.Margin = new Margin(1, 0, 1, 0);
+        panel.ShowScrollbar = false;
+        panel.BorderStyle = SharpConsoleUI.BorderStyle.None;
+
+        var icon = op.Status switch
+        {
+            OperationStatus.Running => "[yellow]⟳[/]",
+            OperationStatus.Completed => "[green]✓[/]",
+            OperationStatus.Failed => "[red]✗[/]",
+            OperationStatus.Cancelled => "[dim]○[/]",
+            _ => " "
+        };
+
+        var desc = SharpConsoleUI.Parsing.MarkupParser.Escape(op.Description);
+
+        // Line 1: icon + description
+        var titleLine = new MarkupControl(new List<string> { $" {icon} {desc}" });
+        titleLine.HorizontalAlignment = HorizontalAlignment.Stretch;
+        panel.AddControl(titleLine);
+
+        // Line 2: current file / error / status detail
+        if (op.Status == OperationStatus.Running)
+        {
+            var fileText = op.CurrentFile != null
+                ? SharpConsoleUI.Parsing.MarkupParser.Escape(
+                    op.CurrentFile.Length > 38 ? op.CurrentFile[..35] + "..." : op.CurrentFile)
+                : "preparing...";
+            var fileLine = new MarkupControl(new List<string> { $"   [dim]{fileText}[/]" });
+            fileLine.HorizontalAlignment = HorizontalAlignment.Stretch;
+            panel.AddControl(fileLine);
+        }
+        else if (op.Status == OperationStatus.Failed && op.ErrorMessage != null)
+        {
+            var err = SharpConsoleUI.Parsing.MarkupParser.Escape(
+                op.ErrorMessage.Length > 38 ? op.ErrorMessage[..35] + "..." : op.ErrorMessage);
+            var errLine = new MarkupControl(new List<string> { $"   [red dim]{err}[/]" });
+            errLine.HorizontalAlignment = HorizontalAlignment.Stretch;
+            panel.AddControl(errLine);
+        }
+        else
+        {
+            var elapsed = $"{op.Elapsed.TotalSeconds:F0}s";
+            var statusText = op.Status switch
+            {
+                OperationStatus.Completed => $"[green]Completed[/] [dim]in {elapsed}[/]",
+                OperationStatus.Cancelled => $"[dim]Cancelled after {elapsed}[/]",
+                _ => ""
+            };
+            var detailLine = new MarkupControl(new List<string> { $"   {statusText}" });
+            detailLine.HorizontalAlignment = HorizontalAlignment.Stretch;
+            panel.AddControl(detailLine);
+        }
+
+        // Line 3: status bar with progress + action
+        var bar = new StatusBarControl
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            BackgroundColor = RowBg
+        };
+
+        if (op.Status == OperationStatus.Running)
+        {
+            if (op.BytesTotal > 0)
+            {
+                var progressText = BuildProgressBar(op.ProgressPercent, 16);
+                bar.AddLeftText($"{progressText} [dim]{op.ProgressPercent}%[/]");
+            }
+            else
+            {
+                bar.AddLeftText("[dim]working…[/]");
+            }
+            bar.AddRightText("[red]Cancel[/]", () => _operations.CancelOperation(op));
+        }
+        else
+        {
+            bar.AddRightText("[dim]Dismiss[/]", () => _operations.RemoveOperation(op));
+        }
+
+        panel.AddControl(bar);
+
+        return panel;
     }
 
     private static string BuildProgressBar(int percent, int width)
     {
-        int filled = (int)(percent / 100.0 * width);
-        filled = Math.Clamp(filled, 0, width);
+        int filled = Math.Clamp((int)(percent / 100.0 * width), 0, width);
         var filledStr = new string('━', filled);
         var emptyStr = new string('─', width - filled);
         return $"[cyan]{filledStr}[/][dim]{emptyStr}[/]";
@@ -142,28 +225,16 @@ internal class OperationsPortal : PortalContentContainer
             return true;
         }
 
-        // Ctrl+1 through Ctrl+9 cancel running operations
-        if (key.Modifiers.HasFlag(ConsoleModifiers.Control))
+        // Tab cycles focus among interactive children in the portal
+        if (key.Key == ConsoleKey.Tab)
         {
-            int idx = key.Key switch
-            {
-                ConsoleKey.D1 => 0,
-                ConsoleKey.D2 => 1,
-                ConsoleKey.D3 => 2,
-                ConsoleKey.D4 => 3,
-                ConsoleKey.D5 => 4,
-                ConsoleKey.D6 => 5,
-                ConsoleKey.D7 => 6,
-                ConsoleKey.D8 => 7,
-                ConsoleKey.D9 => 8,
-                _ => -1
-            };
-            if (idx >= 0)
-            {
-                _operations.CancelByIndex(idx);
-                return true;
-            }
+            base.ProcessKey(key);
+            return true;
         }
+
+        // Delegate to focused child (cancel buttons)
+        if (base.ProcessKey(key))
+            return true;
 
         return true; // consume all keys while open
     }

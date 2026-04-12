@@ -129,7 +129,7 @@ public partial class CXFilesApp
                         await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, op.Cts.Token);
                     }
                     _operations.CompleteOperation(op, Services.OperationStatus.Completed);
-                    Refresh();
+                    _ws.EnqueueOnUIThread(Refresh);
                 }
                 catch (OperationCanceledException)
                 {
@@ -139,7 +139,7 @@ public partial class CXFilesApp
                 {
                     _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
                 }
-                UpdateStatusLine();
+                _ws.EnqueueOnUIThread(UpdateStatusLine);
             });
         }
     }
@@ -190,6 +190,7 @@ public partial class CXFilesApp
         var paths = _clipboard.Paths.ToList();
         var desc = $"{(isCut ? "Moving" : "Copying")} {paths.Count} item{(paths.Count > 1 ? "s" : "")}";
         var op = _operations.StartOperation(opType, desc);
+        op.BytesTotal = paths.Count;
         UpdateStatusLine();
 
         if (isCut) _clipboard.Clear();
@@ -198,23 +199,23 @@ public partial class CXFilesApp
         {
             try
             {
-                foreach (var sourcePath in paths)
+                for (int i = 0; i < paths.Count; i++)
                 {
                     op.Cts.Token.ThrowIfCancellationRequested();
+                    var sourcePath = paths[i];
                     var name = Path.GetFileName(sourcePath);
                     var destPath = Path.Combine(_currentPath, name);
+                    op.CurrentFile = name;
+                    _operations.ReportProgress(op, i, paths.Count);
 
                     if (isCut)
                         await _fs.MoveAsync(sourcePath, destPath, false, op.Cts.Token);
                     else
-                        await _fs.CopyAsync(sourcePath, destPath, false,
-                            new Progress<(long bytes, long total)>(p =>
-                            {
-                                _operations.ReportProgress(op, p.bytes, p.total);
-                            }), op.Cts.Token);
+                        await _fs.CopyAsync(sourcePath, destPath, false, null, op.Cts.Token);
                 }
+                _operations.ReportProgress(op, paths.Count, paths.Count);
                 _operations.CompleteOperation(op, Services.OperationStatus.Completed);
-                Refresh();
+                _ws.EnqueueOnUIThread(Refresh);
             }
             catch (OperationCanceledException)
             {
@@ -224,7 +225,7 @@ public partial class CXFilesApp
             {
                 _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
             }
-            UpdateStatusLine();
+            _ws.EnqueueOnUIThread(UpdateStatusLine);
         });
     }
 

@@ -68,7 +68,7 @@ public partial class CXFilesApp
         _fileWatcher?.Dispose();
         try
         {
-            _fileWatcher = _fs.WatchDirectory(path, _ => Refresh());
+            _fileWatcher = _fs.WatchDirectory(path, _ => _ws.EnqueueOnUIThread(Refresh));
         }
         catch { /* watcher may fail on some filesystems */ }
     }
@@ -127,7 +127,7 @@ public partial class CXFilesApp
         int anchorX = 2;
         int anchorY = _mainWindow.Height - 3;
 
-        _opsPortal = new UI.OperationsPortal(_operations, anchorX, anchorY,
+        _opsPortal = new UI.OperationsPortal(_ws, _operations, anchorX, anchorY,
             _mainWindow.Width, _mainWindow.Height);
         _opsPortal.Container = _mainWindow;
         _opsPortalNode = _mainWindow.CreatePortal(_statusLine.Control, _opsPortal);
@@ -154,7 +154,8 @@ public partial class CXFilesApp
             checkedCount,
             _detailVisible,
             _config.Config.ShowHiddenFiles,
-            _operations.ActiveCount);
+            _operations.ActiveCount,
+            _operations.TotalCount);
     }
 
     private int GetCheckedCount()
@@ -188,29 +189,35 @@ public partial class CXFilesApp
         if (_toolbar == null) return;
         _toolbar.Clear();
 
-        var hasSelection = _fileList.GetSelectedEntry() != null;
+        var checkedCount = GetCheckedCount();
+        var hasSelection = checkedCount > 0;
+        var multiSelect = checkedCount > 1;
 
-        AddToolbarButton("◈ Open [dim]Enter[/]", OpenSelected);
-        AddToolbarButton("↑ Up [dim]Bksp[/]", NavigateUp);
+        AddToolbarButton("◈ Open [grey50]Enter[/]", OpenSelected);
+        AddToolbarButton("↑ Up [grey50]Bksp[/]", NavigateUp);
         _toolbar.AddItem(new SeparatorControl());
-        AddToolbarButton("⊕ New [dim]^N[/]", () => _ = NewItemAsync(false));
+        AddToolbarButton("⊕ New [grey50]^N[/]", () => _ = NewItemAsync(false));
         if (hasSelection)
         {
-            AddToolbarButton("⧫ Rename [dim]F2[/]", () => _ = RenameSelectedAsync());
-            AddToolbarButton("✕ Delete [dim]Del[/]", () => _ = DeleteSelectedAsync());
+            if (!multiSelect)
+            {
+                AddToolbarButton("⧫ Rename [grey50]F2[/]", () => _ = RenameSelectedAsync());
+            }
+            AddToolbarButton("✕ Delete" + (multiSelect ? $" ({checkedCount})" : "") + " [grey50]Del[/]",
+                () => _ = DeleteSelectedAsync());
+            if (!multiSelect)
+            {
+                AddToolbarButton("⊞ Props [grey50]F4[/]", () => _ = ShowPropertiesAsync());
+            }
             _toolbar.AddItem(new SeparatorControl());
-            AddToolbarButton("⊟ Copy [dim]^C[/]", CopySelected);
-            AddToolbarButton("⊠ Cut [dim]^X[/]", CutSelected);
+            AddToolbarButton("⊟ Copy" + (multiSelect ? $" ({checkedCount})" : "") + " [grey50]^C[/]", CopySelected);
+            AddToolbarButton("⊠ Cut" + (multiSelect ? $" ({checkedCount})" : "") + " [grey50]^X[/]", CutSelected);
         }
         if (_clipboard.HasContent)
         {
-            var label = _clipboard.Action == Services.ClipboardAction.Cut
-                ? $"⊡ Paste ({_clipboard.Paths.Count}) [dim]^V[/]"
-                : $"⊡ Paste ({_clipboard.Paths.Count}) [dim]^V[/]";
-            AddToolbarButton(label, () => _ = PasteAsync());
+            AddToolbarButton($"⊡ Paste ({_clipboard.Paths.Count}) [grey50]^V[/]",
+                () => _ = PasteAsync());
         }
-        _toolbar.AddItem(new SeparatorControl());
-        AddToolbarButton("↻ Refresh [dim]F5[/]", Refresh);
     }
 
     private void AddToolbarButton(string label, Action action)

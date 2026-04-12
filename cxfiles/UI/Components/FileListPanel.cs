@@ -34,8 +34,14 @@ public class FileListPanel
             .WithCheckboxMode()
             .WithSorting()
             .WithFiltering()
+            .WithFuzzyFilter()
+            .WithColumnResize()
             .WithBorderStyle(BorderStyle.None)
+            .WithBackgroundColor(Color.Transparent)
+            .WithHeaderColors(Color.Grey70, new Color(25, 35, 55))
+            .WithHorizontalScrollbar(ScrollbarVisibility.Auto)
             .Build();
+        _table.TruncationFade = true;
         _table.VerticalAlignment = VerticalAlignment.Fill;
         _table.HorizontalAlignment = HorizontalAlignment.Stretch;
 

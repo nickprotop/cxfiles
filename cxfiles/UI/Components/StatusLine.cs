@@ -13,6 +13,7 @@ public class StatusLine
     public event Action? DetailToggled;
     public event Action? HiddenToggled;
     public event Action? OperationsClicked;
+    public event Action? RefreshClicked;
 
     public StatusLine()
     {
@@ -26,7 +27,8 @@ public class StatusLine
         };
     }
 
-    public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden, int activeOps = 0)
+    public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
+        int activeOps = 0, int totalOps = 0)
     {
         _bar.BatchUpdate(() =>
         {
@@ -44,24 +46,35 @@ public class StatusLine
             if (activeOps > 0)
             {
                 _bar.AddLeftSeparator();
-                _bar.AddLeftText($"[yellow]⟳ {activeOps} operation{(activeOps > 1 ? "s" : "")}[/]",
+                _bar.AddLeftText($"[yellow]⟳ {activeOps} running[/]",
+                    () => OperationsClicked?.Invoke());
+            }
+            else if (totalOps > 0)
+            {
+                _bar.AddLeftSeparator();
+                _bar.AddLeftText($"[green]✓ {totalOps} done[/]",
                     () => OperationsClicked?.Invoke());
             }
 
-            // Right: toggle buttons
-            var detailColor = detailVisible ? "cyan" : "grey50";
-            _bar.AddRightText($"[{detailColor}]Detail[/] [dim]F3[/]",
+            // Right: actions + toggle buttons
+            _bar.AddRightText("[grey70]Refresh[/] [grey50]F5[/]",
+                () => RefreshClicked?.Invoke());
+
+            _bar.AddRightSeparator();
+
+            var detailColor = detailVisible ? "cyan1" : "grey70";
+            _bar.AddRightText($"[{detailColor}]Detail[/] [grey50]F3[/]",
                 () => DetailToggled?.Invoke());
 
             _bar.AddRightSeparator();
 
-            var hiddenColor = showHidden ? "cyan" : "grey50";
-            _bar.AddRightText($"[{hiddenColor}]Hidden[/] [dim]^H[/]",
+            var hiddenColor = showHidden ? "cyan1" : "grey70";
+            _bar.AddRightText($"[{hiddenColor}]Hidden[/] [grey50]^H[/]",
                 () => HiddenToggled?.Invoke());
 
             _bar.AddRightSeparator();
 
-            _bar.AddRightText("[grey70]Options[/] [dim]^O[/]",
+            _bar.AddRightText("[grey70]Options[/] [grey50]^O[/]",
                 () => OptionsClicked?.Invoke());
         });
     }

@@ -75,6 +75,11 @@ public class FileDataSource : ITableDataSource
     public object? GetRowTag(int row) =>
         row >= 0 && row < _entries.Count ? _entries[row] : null;
 
+    private static readonly Color OddRowBg = new(18, 22, 35);
+
+    public Color? GetRowBackgroundColor(int row) =>
+        row % 2 == 1 ? OddRowBg : null;
+
     public Color? GetRowForegroundColor(int row)
     {
         if (row < 0 || row >= _entries.Count) return null;

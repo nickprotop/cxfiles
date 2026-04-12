@@ -71,6 +71,7 @@ public partial class CXFilesApp
             _config.Save();
             UpdateStatusLine();
         };
+        _statusLine.RefreshClicked += Refresh;
         _statusLine.OptionsClicked += () => _ = ShowOptionsAsync();
         _statusLine.OperationsClicked += ShowOperationsPortal;
 

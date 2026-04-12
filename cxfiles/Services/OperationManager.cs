@@ -16,6 +16,8 @@ public class FileOperation
     public DateTime? EndTime { get; set; }
     public CancellationTokenSource Cts { get; } = new();
 
+    public string? CurrentFile { get; set; }
+
     public int ProgressPercent => BytesTotal > 0
         ? (int)(BytesCompleted * 100 / BytesTotal)
         : 0;
@@ -28,6 +30,8 @@ public class FileOperation
         OperationStatus.Cancelled => "Cancelled",
         _ => ""
     };
+
+    public TimeSpan Elapsed => (EndTime ?? DateTime.Now) - StartTime;
 }
 
 public class OperationManager
@@ -106,6 +110,12 @@ public class OperationManager
         var running = RunningOperations;
         if (index >= 0 && index < running.Count)
             CancelOperation(running[index]);
+    }
+
+    public void RemoveOperation(FileOperation op)
+    {
+        lock (_lock) _operations.Remove(op);
+        OperationsChanged?.Invoke();
     }
 
     public void ClearCompleted()

@@ -31,6 +31,8 @@ public class FileListPanel
             .WithDataSource(_dataSource)
             .Interactive()
             .WithMultiSelect()
+            .WithSorting()
+            .WithFiltering()
             .WithBorderStyle(BorderStyle.None)
             .Build();
         _table.VerticalAlignment = VerticalAlignment.Fill;

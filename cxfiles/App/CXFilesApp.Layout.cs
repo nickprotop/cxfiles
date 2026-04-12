@@ -72,6 +72,7 @@ public partial class CXFilesApp
             UpdateStatusLine();
         };
         _statusLine.OptionsClicked += () => _ = ShowOptionsAsync();
+        _statusLine.OperationsClicked += ShowOperationsPortal;
 
         // Top rule
         var topRule = Controls.RuleBuilder()
@@ -138,8 +139,16 @@ public partial class CXFilesApp
             .OnKeyPressed(OnGlobalKeyPressed)
             .Build();
 
-        // Route preview keys to context menu before controls consume them
-        _mainWindow.PreviewKeyPressed += (_, e) => _contextMenu.ProcessPreviewKey(e);
+        // Route preview keys to context menu / operations portal
+        _mainWindow.PreviewKeyPressed += (_, e) =>
+        {
+            if (_contextMenu.ProcessPreviewKey(e)) return;
+            if (_opsPortal != null)
+            {
+                _opsPortal.ProcessKey(e.KeyInfo);
+                e.Handled = true;
+            }
+        };
 
         // Right-click on file list opens context menu
         _fileList.Control.MouseRightClick += (_, args) =>

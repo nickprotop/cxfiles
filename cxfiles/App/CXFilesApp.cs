@@ -27,6 +27,8 @@ public partial class CXFilesApp
     private ToolbarControl _toolbar = null!;
     private HorizontalGridControl? _mainGrid;
     private UI.ContextMenuBuilder _contextMenu = null!;
+    private UI.OperationsPortal? _opsPortal;
+    private LayoutNode? _opsPortalNode;
 
     // State
     private string _currentPath;
@@ -114,6 +116,34 @@ public partial class CXFilesApp
     {
         _fileList.Refresh();
         UpdateStatusLine();
+    }
+
+    private void ShowOperationsPortal()
+    {
+        if (_mainWindow == null) return;
+        DismissOperationsPortal();
+
+        // Anchor at bottom-left of the status bar area
+        int anchorX = 2;
+        int anchorY = _mainWindow.Height - 3;
+
+        _opsPortal = new UI.OperationsPortal(_operations, anchorX, anchorY,
+            _mainWindow.Width, _mainWindow.Height);
+        _opsPortal.Container = _mainWindow;
+        _opsPortalNode = _mainWindow.CreatePortal(_statusLine.Control, _opsPortal);
+
+        _opsPortal.Dismissed += (_, _) => DismissOperationsPortal();
+        _opsPortal.DismissRequested += (_, _) => DismissOperationsPortal();
+    }
+
+    private void DismissOperationsPortal()
+    {
+        if (_opsPortalNode != null && _mainWindow != null)
+        {
+            _mainWindow.RemovePortal(_statusLine.Control, _opsPortalNode);
+            _opsPortalNode = null;
+            _opsPortal = null;
+        }
     }
 
     private void UpdateStatusLine()

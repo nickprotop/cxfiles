@@ -95,17 +95,32 @@ public partial class CXFilesApp
 
         if (confirmed)
         {
-            try
+            var desc = entries.Count == 1 ? $"Deleting {entries[0].Name}" : $"Deleting {entries.Count} items";
+            var op = _operations.StartOperation(Services.OperationType.Delete, desc);
+            UpdateStatusLine();
+
+            _ = Task.Run(async () =>
             {
-                foreach (var entry in entries)
-                    await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, CancellationToken.None);
-                Refresh();
-            }
-            catch (Exception ex)
-            {
-                _ws.NotificationStateService.ShowNotification(
-                    "Error", $"Delete failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
-            }
+                try
+                {
+                    foreach (var entry in entries)
+                    {
+                        op.Cts.Token.ThrowIfCancellationRequested();
+                        await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, op.Cts.Token);
+                    }
+                    _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                    Refresh();
+                }
+                catch (OperationCanceledException)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+                }
+                catch (Exception ex)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+                }
+                UpdateStatusLine();
+            });
         }
     }
 

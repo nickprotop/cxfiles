@@ -38,6 +38,7 @@ class Program
         // Services
         services.AddSingleton<IFileSystemService, FileSystemService>();
         services.AddSingleton<IConfigService, ConfigService>();
+        services.AddSingleton<OperationManager>();
 
         var provider = services.BuildServiceProvider();
 
@@ -45,7 +46,8 @@ class Program
         var app = new CXFilesApp(
             provider.GetRequiredService<ConsoleWindowSystem>(),
             provider.GetRequiredService<IFileSystemService>(),
-            provider.GetRequiredService<IConfigService>());
+            provider.GetRequiredService<IConfigService>(),
+            provider.GetRequiredService<OperationManager>());
 
         app.Run();
 

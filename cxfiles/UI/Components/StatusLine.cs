@@ -12,6 +12,7 @@ public class StatusLine
     public event Action? OptionsClicked;
     public event Action? DetailToggled;
     public event Action? HiddenToggled;
+    public event Action? OperationsClicked;
 
     public StatusLine()
     {
@@ -25,13 +26,13 @@ public class StatusLine
         };
     }
 
-    public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden)
+    public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden, int activeOps = 0)
     {
         _bar.BatchUpdate(() =>
         {
             _bar.ClearAll();
 
-            // Left: contextual info
+            // Left: item count + selection
             _bar.AddLeftText($"[dim]{itemCount} items[/]");
             if (selectedCount > 0)
             {
@@ -39,7 +40,15 @@ public class StatusLine
                 _bar.AddLeftText($"[cyan]{selectedCount} selected[/]");
             }
 
-            // Right: toggle buttons + options
+            // Left: operations indicator
+            if (activeOps > 0)
+            {
+                _bar.AddLeftSeparator();
+                _bar.AddLeftText($"[yellow]⟳ {activeOps} operation{(activeOps > 1 ? "s" : "")}[/]",
+                    () => OperationsClicked?.Invoke());
+            }
+
+            // Right: toggle buttons
             var detailColor = detailVisible ? "cyan" : "grey50";
             _bar.AddRightText($"[{detailColor}]Detail[/] [dim]F3[/]",
                 () => DetailToggled?.Invoke());

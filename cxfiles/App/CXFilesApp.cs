@@ -15,6 +15,7 @@ public partial class CXFilesApp
     private readonly ConsoleWindowSystem _ws;
     private readonly IFileSystemService _fs;
     private readonly IConfigService _config;
+    private readonly OperationManager _operations;
     private Window? _mainWindow;
 
     // UI Components
@@ -31,11 +32,12 @@ public partial class CXFilesApp
     private bool _detailVisible;
     private IDisposable? _fileWatcher;
 
-    public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config)
+    public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config, OperationManager operations)
     {
         _ws = ws;
         _fs = fs;
         _config = config;
+        _operations = operations;
         _currentPath = config.Config.DefaultPath;
         _detailVisible = config.Config.ShowDetailPanel;
     }
@@ -102,6 +104,7 @@ public partial class CXFilesApp
         }
 
         _config.Config.ShowDetailPanel = _detailVisible;
+        UpdateStatusLine();
         _mainWindow?.Invalidate(true);
     }
 
@@ -118,7 +121,8 @@ public partial class CXFilesApp
             _fileList.Control.RowCount,
             checkedCount,
             _detailVisible,
-            _config.Config.ShowHiddenFiles);
+            _config.Config.ShowHiddenFiles,
+            _operations.ActiveCount);
     }
 
     private int GetCheckedCount()

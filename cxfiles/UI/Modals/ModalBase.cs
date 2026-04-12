@@ -21,8 +21,12 @@ public abstract class ModalBase<TResult>
         _tcs = new TaskCompletionSource<TResult>();
         CreateModal();
         BuildContent();
-        WindowSystem.AddWindow(Modal!);
-        WindowSystem.SetActiveWindow(Modal!);
+
+        // Handle close button — complete with default result
+        Modal!.OnClosed += (_, _) => _tcs?.TrySetResult(GetDefaultResult());
+
+        WindowSystem.AddWindow(Modal);
+        WindowSystem.SetActiveWindow(Modal);
         return _tcs.Task;
     }
 

@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+.superpowers/
+.claude/
+CLAUDE.md
+docs/superpowers/
+.worktrees/
+publish/

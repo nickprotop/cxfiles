@@ -69,19 +69,7 @@ public partial class CXFilesApp
         if (entry == null) return;
 
         if (entry.IsDirectory)
-        {
             NavigateTo(entry.FullPath);
-        }
-        else
-        {
-            // Open file with default application
-            try
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo(entry.FullPath) { UseShellExecute = true };
-                System.Diagnostics.Process.Start(psi);
-            }
-            catch { }
-        }
     }
 
     private void ToggleDetailPanel()

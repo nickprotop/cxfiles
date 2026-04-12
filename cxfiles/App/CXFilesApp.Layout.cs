@@ -37,8 +37,6 @@ public partial class CXFilesApp
         {
             if (entry.IsDirectory)
                 NavigateTo(entry.FullPath);
-            else
-                OpenSelected();
         };
         _fileList.SelectionChanged += entry =>
         {

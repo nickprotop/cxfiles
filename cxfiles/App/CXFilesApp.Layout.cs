@@ -51,6 +51,15 @@ public partial class CXFilesApp
 
         // Status line
         _statusLine = new StatusLine();
+        _statusLine.DetailToggled += ToggleDetailPanel;
+        _statusLine.HiddenToggled += () =>
+        {
+            _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
+            _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+            _config.Save();
+            UpdateStatusLine();
+        };
+        _statusLine.OptionsClicked += () => _ = ShowOptionsAsync();
 
         // Top rule
         var topRule = Controls.RuleBuilder()

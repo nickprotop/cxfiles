@@ -78,20 +78,27 @@ public partial class CXFilesApp
 
     private async Task DeleteSelectedAsync()
     {
-        var entry = _fileList.GetSelectedEntry();
-        if (entry == null) return;
+        var entries = GetCheckedEntries();
+        if (entries.Count == 0) return;
 
-        var type = entry.IsDirectory ? "folder" : "file";
-        var confirmed = await ConfirmModal.ShowAsync(_ws,
-            "Delete",
-            $"Delete {type} \"{entry.Name}\"?",
-            _mainWindow);
+        string message;
+        if (entries.Count == 1)
+        {
+            var type = entries[0].IsDirectory ? "folder" : "file";
+            message = $"Delete {type} \"{entries[0].Name}\"?";
+        }
+        else
+        {
+            message = $"Delete {entries.Count} items?";
+        }
+        var confirmed = await ConfirmModal.ShowAsync(_ws, "Delete", message, _mainWindow);
 
         if (confirmed)
         {
             try
             {
-                await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, CancellationToken.None);
+                foreach (var entry in entries)
+                    await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, CancellationToken.None);
                 Refresh();
             }
             catch (Exception ex)

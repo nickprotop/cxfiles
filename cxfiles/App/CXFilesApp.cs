@@ -4,6 +4,7 @@ using SharpConsoleUI.Controls;
 using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Rendering;
+using CXFiles.Models;
 using CXFiles.Services;
 using CXFiles.UI.Components;
 
@@ -112,11 +113,26 @@ public partial class CXFilesApp
 
     private void UpdateStatusLine()
     {
-        var selected = _fileList.GetSelectedEntry();
+        var checkedCount = GetCheckedCount();
         _statusLine.Update(
             _fileList.Control.RowCount,
-            selected != null ? 1 : 0,
-            _currentPath);
+            checkedCount,
+            _detailVisible,
+            _config.Config.ShowHiddenFiles);
+    }
+
+    private int GetCheckedCount()
+    {
+        var selected = _fileList.GetSelectedEntry();
+        return selected != null ? 1 : 0;
+    }
+
+    private List<FileEntry> GetCheckedEntries()
+    {
+        var result = new List<FileEntry>();
+        var selected = _fileList.GetSelectedEntry();
+        if (selected != null) result.Add(selected);
+        return result;
     }
 
     private void UpdateToolbar()

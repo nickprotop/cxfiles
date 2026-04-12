@@ -77,5 +77,7 @@ public class FileListPanel
         return _dataSource.GetEntry(idx);
     }
 
+    public FileEntry? GetEntryAt(int index) => _dataSource.GetEntry(index);
+
     public void Refresh() => Navigate(_currentPath);
 }

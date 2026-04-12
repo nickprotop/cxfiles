@@ -6,16 +6,23 @@ public class FileSystemService : IFileSystemService
 {
     public IReadOnlyList<DriveEntry> GetDrives()
     {
-        return DriveInfo.GetDrives()
-            .Where(d => d.IsReady)
-            .Select(d => new DriveEntry(
-                d.Name,
-                d.RootDirectory.FullName,
-                d.VolumeLabel,
-                d.TotalSize,
-                d.AvailableFreeSpace,
-                d.DriveType.ToString()))
-            .ToList();
+        var result = new List<DriveEntry>();
+        foreach (var d in DriveInfo.GetDrives())
+        {
+            if (!d.IsReady) continue;
+            try
+            {
+                result.Add(new DriveEntry(
+                    d.Name,
+                    d.RootDirectory.FullName,
+                    d.VolumeLabel,
+                    d.TotalSize,
+                    d.AvailableFreeSpace,
+                    d.DriveType.ToString()));
+            }
+            catch { }
+        }
+        return result;
     }
 
     public IReadOnlyList<FileEntry> ListDirectory(string path)

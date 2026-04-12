@@ -25,7 +25,7 @@ public class FolderTreePanel
 
         _tree.NodeActivated += (_, e) =>
         {
-            if (e.Node.Tag is string path && _fs.DirectoryExists(path))
+            if (e?.Node?.Tag is string path && _fs.DirectoryExists(path))
                 FolderSelected?.Invoke(path);
         };
     }

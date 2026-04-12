@@ -1,5 +1,6 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Events;
+using CXFiles.UI.Modals;
 
 namespace CXFiles.App;
 
@@ -19,7 +20,7 @@ public partial class CXFilesApp
                 break;
 
             case ConsoleKey.F2:
-                // TODO: rename modal
+                _ = RenameSelectedAsync();
                 e.Handled = true;
                 break;
 
@@ -34,17 +35,17 @@ public partial class CXFilesApp
                 break;
 
             case ConsoleKey.Delete:
-                // TODO: delete confirm modal
+                _ = DeleteSelectedAsync();
                 e.Handled = true;
                 break;
 
             case ConsoleKey.N when ctrl && !shift:
-                // TODO: new file modal
+                _ = NewItemAsync(isDirectory: false);
                 e.Handled = true;
                 break;
 
             case ConsoleKey.N when ctrl && shift:
-                // TODO: new folder modal
+                _ = NewItemAsync(isDirectory: true);
                 e.Handled = true;
                 break;
 
@@ -52,6 +53,75 @@ public partial class CXFilesApp
                 _ws.Shutdown();
                 e.Handled = true;
                 break;
+        }
+    }
+
+    private async Task DeleteSelectedAsync()
+    {
+        var entry = _fileList.GetSelectedEntry();
+        if (entry == null) return;
+
+        var type = entry.IsDirectory ? "folder" : "file";
+        var confirmed = await ConfirmModal.ShowAsync(_ws,
+            "Delete",
+            $"Delete {type} \"{entry.Name}\"?",
+            _mainWindow);
+
+        if (confirmed)
+        {
+            try
+            {
+                await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, CancellationToken.None);
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                _ws.NotificationStateService.ShowNotification(
+                    "Error", $"Delete failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+            }
+        }
+    }
+
+    private async Task RenameSelectedAsync()
+    {
+        var entry = _fileList.GetSelectedEntry();
+        if (entry == null) return;
+
+        var newName = await RenameModal.ShowAsync(_ws, entry.Name, _mainWindow);
+        if (newName != null)
+        {
+            try
+            {
+                _fs.Rename(entry.FullPath, newName);
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                _ws.NotificationStateService.ShowNotification(
+                    "Error", $"Rename failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+            }
+        }
+    }
+
+    private async Task NewItemAsync(bool isDirectory)
+    {
+        var result = await NewItemModal.ShowAsync(_ws, isDirectory, _mainWindow);
+        if (result?.Name != null)
+        {
+            try
+            {
+                var path = Path.Combine(_currentPath, result.Name);
+                if (result.IsDirectory)
+                    _fs.CreateDirectory(path);
+                else
+                    _fs.CreateFile(path);
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                _ws.NotificationStateService.ShowNotification(
+                    "Error", $"Create failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+            }
         }
     }
 }

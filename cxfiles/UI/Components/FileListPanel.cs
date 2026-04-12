@@ -32,6 +32,7 @@ public class FileListPanel
             .AddColumn("Modified")
             .AddColumn("Type")
             .Interactive()
+            .WithMultiSelect()
             .WithBorderStyle(BorderStyle.None)
             .Build();
         _table.VerticalAlignment = VerticalAlignment.Fill;

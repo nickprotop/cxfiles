@@ -17,8 +17,10 @@ public class BreadcrumbBar
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
             Margin = new Margin(1, 0, 1, 0),
-            BackgroundColor = Color.Transparent,
-            SeparatorChar = " \u25b8 "
+            BackgroundColor = new Color(20, 28, 45),
+            ForegroundColor = new Color(180, 190, 210),
+            SeparatorChar = " \u25b8 ",
+            StickyPosition = StickyPosition.Top
         };
     }
 

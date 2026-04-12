@@ -117,16 +117,12 @@ public partial class CXFilesApp
         AddToolbarButton("◈ Open [dim]Enter[/]", OpenSelected);
         AddToolbarButton("↑ Up [dim]Bksp[/]", NavigateUp);
         _toolbar.AddItem(new SeparatorControl());
-        AddToolbarButton("⊕ New [dim]^N[/]", () => { /* TODO: new file modal */ });
+        AddToolbarButton("⊕ New [dim]^N[/]", () => _ = NewItemAsync(false));
         if (hasSelection)
         {
-            AddToolbarButton("⧫ Rename [dim]F2[/]", () => { /* TODO: rename modal */ });
-            AddToolbarButton("✕ Delete [dim]Del[/]", () => { /* TODO: delete confirm */ });
-            _toolbar.AddItem(new SeparatorControl());
-            AddToolbarButton("⊟ Copy [dim]^C[/]", () => { /* TODO */ });
-            AddToolbarButton("⊠ Cut [dim]^X[/]", () => { /* TODO */ });
+            AddToolbarButton("⧫ Rename [dim]F2[/]", () => _ = RenameSelectedAsync());
+            AddToolbarButton("✕ Delete [dim]Del[/]", () => _ = DeleteSelectedAsync());
         }
-        AddToolbarButton("⊡ Paste [dim]^V[/]", () => { /* TODO */ });
         _toolbar.AddItem(new SeparatorControl());
         AddToolbarButton(_detailVisible ? "◧ Detail [dim]F3[/]" : "◨ Detail [dim]F3[/]", ToggleDetailPanel);
         AddToolbarButton("↻ Refresh [dim]F5[/]", Refresh);
@@ -134,7 +130,11 @@ public partial class CXFilesApp
 
     private void AddToolbarButton(string label, Action action)
     {
-        var btn = Controls.Button(label)
+        var btn = Controls.Button()
+            .WithText(label)
+            .WithBorder(ButtonBorderStyle.None)
+            .WithBackgroundColor(Color.Transparent)
+            .WithBorderBackgroundColor(Color.Transparent)
             .OnClick((_, _) => action())
             .Build();
         _toolbar.AddItem(btn);

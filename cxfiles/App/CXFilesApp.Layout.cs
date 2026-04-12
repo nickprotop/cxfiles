@@ -66,13 +66,15 @@ public partial class CXFilesApp
             .WithColor(Color.Grey27)
             .Build();
 
-        // Main grid: tree | file list | detail
+        // Main grid: tree | splitter | file list | splitter | detail
         var mainGrid = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(col => col.Flex(1).Add(_folderTree.Control))
             .Column(col => col.Flex(3).Add(_fileList.Control))
             .Column(col => col.Flex(1).Add(_detailPanel.Control))
+            .WithSplitterAfter(0)
+            .WithSplitterAfter(1)
             .Build();
 
         // Background gradient (cxpost style)

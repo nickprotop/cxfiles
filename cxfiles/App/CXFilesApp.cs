@@ -26,6 +26,7 @@ public partial class CXFilesApp
     private StatusLine _statusLine = null!;
     private ToolbarControl _toolbar = null!;
     private HorizontalGridControl? _mainGrid;
+    private UI.ContextMenuBuilder _contextMenu = null!;
 
     // State
     private string _currentPath;

@@ -1,50 +1,92 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Layout;
 using CXFiles.Models;
+using CXFiles.Services;
 
 namespace CXFiles.UI;
 
 public class ContextMenuBuilder
 {
-    private readonly ConsoleWindowSystem _ws;
-    private readonly Window _parentWindow;
-    private readonly Action<FileEntry> _onRename;
-    private readonly Action<FileEntry> _onDelete;
-    private readonly Action<bool> _onNewItem;
-    private readonly Action _onRefresh;
+    private ContextMenuPortal? _portal;
+    private LayoutNode? _portalNode;
+    private IWindowControl? _portalOwner;
 
-    public ContextMenuBuilder(
-        ConsoleWindowSystem ws,
-        Window parentWindow,
-        Action<FileEntry> onRename,
-        Action<FileEntry> onDelete,
-        Action<bool> onNewItem,
-        Action onRefresh)
+    public event Action<FileEntry>? OnOpen;
+    public event Action? OnRename;
+    public event Action? OnDelete;
+    public event Action? OnProperties;
+    public event Action? OnCopy;
+    public event Action? OnCut;
+    public event Action? OnPaste;
+    public event Action<bool>? OnNewItem;
+    public event Action? OnRefresh;
+
+    public bool IsOpen => _portal != null;
+
+    public bool ProcessPreviewKey(SharpConsoleUI.KeyPressedEventArgs e)
     {
-        _ws = ws;
-        _parentWindow = parentWindow;
-        _onRename = onRename;
-        _onDelete = onDelete;
-        _onNewItem = onNewItem;
-        _onRefresh = onRefresh;
+        if (_portal != null)
+        {
+            _portal.ProcessKey(e.KeyInfo);
+            e.Handled = true;
+            return true;
+        }
+        return false;
     }
 
-    public void Show(FileEntry entry, int screenX, int screenY)
+    public void Dismiss(Window window)
     {
-        var items = new List<(string label, Action action)>
+        if (_portalNode != null && _portalOwner != null)
         {
-            ("Open", () => { /* handled by caller */ }),
-            ("---", () => { }),
-            ("Rename  F2", () => _onRename(entry)),
-            ("Delete  Del", () => _onDelete(entry)),
-            ("---", () => { }),
-            ("New File     ^N", () => _onNewItem(false)),
-            ("New Folder  ^⇧N", () => _onNewItem(true)),
-            ("---", () => { }),
-            ("Refresh  F5", () => _onRefresh()),
+            window.RemovePortal(_portalOwner, _portalNode);
+            _portalNode = null;
+            _portal = null;
+            _portalOwner = null;
+        }
+    }
+
+    public void Show(FileEntry entry, Window window, IWindowControl owner,
+        int screenX, int screenY, bool hasClipboard)
+    {
+        Dismiss(window);
+
+        var items = new List<ContextMenuItem>
+        {
+            new("Open", "Enter", () => OnOpen?.Invoke(entry)),
+            new("-"),
+            new("Copy", "^C", () => OnCopy?.Invoke()),
+            new("Cut", "^X", () => OnCut?.Invoke()),
         };
 
-        // TODO: show as portal menu at (screenX, screenY)
-        // For now, this is a placeholder — needs MenuControl + portal integration
+        if (hasClipboard)
+            items.Add(new("Paste", "^V", () => OnPaste?.Invoke()));
+
+        items.AddRange(new ContextMenuItem[]
+        {
+            new("-"),
+            new("Rename", "F2", () => OnRename?.Invoke()),
+            new("Delete", "Del", () => OnDelete?.Invoke()),
+            new("-"),
+            new("New File", "^N", () => OnNewItem?.Invoke(false)),
+            new("New Folder", "^⇧N", () => OnNewItem?.Invoke(true)),
+            new("-"),
+            new("Properties", "F4", () => OnProperties?.Invoke()),
+        });
+
+        var portal = new ContextMenuPortal(items, screenX, screenY, window.Width, window.Height);
+        portal.Container = window;
+        _portal = portal;
+        _portalOwner = owner;
+        _portalNode = window.CreatePortal(owner, portal);
+
+        portal.ItemSelected += (_, item) =>
+        {
+            Dismiss(window);
+            item.Action?.Invoke();
+        };
+
+        portal.Dismissed += (_, _) => Dismiss(window);
+        portal.DismissRequested += (_, _) => Dismiss(window);
     }
 }

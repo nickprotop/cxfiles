@@ -45,6 +45,18 @@ public partial class CXFilesApp
             UpdateToolbar();
         };
 
+        // Context menu
+        _contextMenu = new UI.ContextMenuBuilder();
+        _contextMenu.OnOpen += entry => { if (entry.IsDirectory) NavigateTo(entry.FullPath); };
+        _contextMenu.OnRename += () => _ = RenameSelectedAsync();
+        _contextMenu.OnDelete += () => _ = DeleteSelectedAsync();
+        _contextMenu.OnProperties += () => _ = ShowPropertiesAsync();
+        _contextMenu.OnCopy += CopySelected;
+        _contextMenu.OnCut += CutSelected;
+        _contextMenu.OnPaste += () => _ = PasteAsync();
+        _contextMenu.OnNewItem += isDir => _ = NewItemAsync(isDir);
+        _contextMenu.OnRefresh += Refresh;
+
         // Detail panel (right panel)
         _detailPanel = new DetailPanel(_fs);
         _detailPanel.Control.Visible = _detailVisible;
@@ -88,6 +100,18 @@ public partial class CXFilesApp
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
             .Build();
+
+        // Apply initial visibility for detail panel
+        if (!_detailVisible)
+        {
+            _detailPanel.Control.Visible = false;
+            var splitters = _mainGrid.Splitters;
+            if (splitters.Count >= 2)
+                splitters[1].Visible = false;
+            var columns = _mainGrid.Columns;
+            if (columns.Count >= 3)
+                columns[2].Visible = false;
+        }
         var mainGrid = _mainGrid;
 
         // Background gradient (cxpost style)
@@ -113,5 +137,20 @@ public partial class CXFilesApp
             .AddControl(_statusLine.Control)
             .OnKeyPressed(OnGlobalKeyPressed)
             .Build();
+
+        // Route preview keys to context menu before controls consume them
+        _mainWindow.PreviewKeyPressed += (_, e) => _contextMenu.ProcessPreviewKey(e);
+
+        // Right-click on file list opens context menu
+        _fileList.Control.MouseRightClick += (_, args) =>
+        {
+            var entry = _fileList.GetSelectedEntry();
+            if (entry != null && _mainWindow != null)
+            {
+                _contextMenu.Show(entry, _mainWindow, _fileList.Control,
+                    args.AbsolutePosition.X, args.AbsolutePosition.Y,
+                    _clipboard.HasContent);
+            }
+        };
     }
 }

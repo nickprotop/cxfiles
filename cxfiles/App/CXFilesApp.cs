@@ -23,6 +23,7 @@ public partial class CXFilesApp
     private DetailPanel _detailPanel = null!;
     private StatusLine _statusLine = null!;
     private ToolbarControl _toolbar = null!;
+    private HorizontalGridControl? _mainGrid;
 
     // State
     private string _currentPath;
@@ -76,6 +77,20 @@ public partial class CXFilesApp
     {
         _detailVisible = !_detailVisible;
         _detailPanel.Control.Visible = _detailVisible;
+
+        // Also hide/show the right splitter (between file list and detail)
+        if (_mainGrid != null)
+        {
+            var splitters = _mainGrid.Splitters;
+            if (splitters.Count >= 2)
+                splitters[1].Visible = _detailVisible;
+
+            // Hide/show the detail column container
+            var columns = _mainGrid.Columns;
+            if (columns.Count >= 3)
+                columns[2].Visible = _detailVisible;
+        }
+
         _config.Config.ShowDetailPanel = _detailVisible;
         _mainWindow?.Invalidate(true);
     }

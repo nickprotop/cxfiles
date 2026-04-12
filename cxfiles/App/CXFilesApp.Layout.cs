@@ -64,8 +64,13 @@ public partial class CXFilesApp
             .WithColor(Color.Grey27)
             .Build();
 
+        // Set controls to stretch horizontally
+        _folderTree.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _fileList.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _detailPanel.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
+
         // Main grid: tree | splitter | file list | splitter | detail
-        var mainGrid = Controls.HorizontalGrid()
+        _mainGrid = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(col => col.Flex(1).Add(_folderTree.Control))
@@ -74,6 +79,7 @@ public partial class CXFilesApp
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
             .Build();
+        var mainGrid = _mainGrid;
 
         // Background gradient (cxpost style)
         var gradient = ColorGradient.FromColors(new Color(25, 32, 52), new Color(7, 7, 13));

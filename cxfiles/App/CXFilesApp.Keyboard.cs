@@ -210,8 +210,7 @@ public partial class CXFilesApp
                         await _fs.CopyAsync(sourcePath, destPath, false,
                             new Progress<(long bytes, long total)>(p =>
                             {
-                                op.BytesCompleted = p.bytes;
-                                op.BytesTotal = p.total;
+                                _operations.ReportProgress(op, p.bytes, p.total);
                             }), op.Cts.Token);
                 }
                 _operations.CompleteOperation(op, Services.OperationStatus.Completed);

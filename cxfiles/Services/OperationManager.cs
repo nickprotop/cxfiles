@@ -22,7 +22,7 @@ public class FileOperation
 
     public string StatusText => Status switch
     {
-        OperationStatus.Running => $"{ProgressPercent}%",
+        OperationStatus.Running => BytesTotal > 0 ? $"{ProgressPercent}%" : "...",
         OperationStatus.Completed => "Done",
         OperationStatus.Failed => "Failed",
         OperationStatus.Cancelled => "Cancelled",
@@ -34,6 +34,7 @@ public class OperationManager
 {
     private readonly List<FileOperation> _operations = new();
     private readonly object _lock = new();
+    private long _lastProgressNotify;
 
     public event Action? OperationsChanged;
 
@@ -52,12 +53,31 @@ public class OperationManager
         get { lock (_lock) return _operations.Count; }
     }
 
+    public IReadOnlyList<FileOperation> RunningOperations
+    {
+        get { lock (_lock) return _operations.Where(o => o.Status == OperationStatus.Running).ToList(); }
+    }
+
     public FileOperation StartOperation(OperationType type, string description)
     {
         var op = new FileOperation { Type = type, Description = description };
         lock (_lock) _operations.Add(op);
         OperationsChanged?.Invoke();
         return op;
+    }
+
+    public void ReportProgress(FileOperation op, long bytesCompleted, long bytesTotal)
+    {
+        op.BytesCompleted = bytesCompleted;
+        op.BytesTotal = bytesTotal;
+
+        // Throttle notifications to ~10 per second
+        var now = Environment.TickCount64;
+        if (now - _lastProgressNotify >= 100)
+        {
+            _lastProgressNotify = now;
+            OperationsChanged?.Invoke();
+        }
     }
 
     public void CompleteOperation(FileOperation op, OperationStatus status, string? error = null)
@@ -79,6 +99,13 @@ public class OperationManager
     {
         op.Cts.Cancel();
         CompleteOperation(op, OperationStatus.Cancelled);
+    }
+
+    public void CancelByIndex(int index)
+    {
+        var running = RunningOperations;
+        if (index >= 0 && index < running.Count)
+            CancelOperation(running[index]);
     }
 
     public void ClearCompleted()

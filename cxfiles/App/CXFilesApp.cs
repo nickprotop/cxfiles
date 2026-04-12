@@ -159,15 +159,27 @@ public partial class CXFilesApp
 
     private int GetCheckedCount()
     {
-        var selected = _fileList.GetSelectedEntry();
-        return selected != null ? 1 : 0;
+        var indices = _fileList.Control.GetSelectedIndices();
+        return indices.Count > 0 ? indices.Count : (_fileList.GetSelectedEntry() != null ? 1 : 0);
     }
 
     private List<FileEntry> GetCheckedEntries()
     {
         var result = new List<FileEntry>();
-        var selected = _fileList.GetSelectedEntry();
-        if (selected != null) result.Add(selected);
+        var indices = _fileList.Control.GetSelectedIndices();
+        if (indices.Count > 0)
+        {
+            foreach (var idx in indices)
+            {
+                var entry = _fileList.GetEntryAt(idx);
+                if (entry != null) result.Add(entry);
+            }
+        }
+        else
+        {
+            var selected = _fileList.GetSelectedEntry();
+            if (selected != null) result.Add(selected);
+        }
         return result;
     }
 

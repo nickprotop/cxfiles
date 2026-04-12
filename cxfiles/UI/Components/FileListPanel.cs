@@ -31,6 +31,7 @@ public class FileListPanel
             .WithDataSource(_dataSource)
             .Interactive()
             .WithMultiSelect()
+            .WithCheckboxMode()
             .WithSorting()
             .WithFiltering()
             .WithBorderStyle(BorderStyle.None)

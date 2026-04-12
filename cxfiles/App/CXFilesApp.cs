@@ -167,7 +167,6 @@ public partial class CXFilesApp
             AddToolbarButton(label, () => _ = PasteAsync());
         }
         _toolbar.AddItem(new SeparatorControl());
-        AddToolbarButton(_detailVisible ? "◧ Detail [dim]F3[/]" : "◨ Detail [dim]F3[/]", ToggleDetailPanel);
         AddToolbarButton("↻ Refresh [dim]F5[/]", Refresh);
     }
 

@@ -39,6 +39,11 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.F4: // Properties
+                _ = ShowPropertiesAsync();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.N when ctrl && !shift:
                 _ = NewItemAsync(isDirectory: false);
                 e.Handled = true;
@@ -222,6 +227,13 @@ public partial class CXFilesApp
             }
             UpdateStatusLine();
         });
+    }
+
+    private async Task ShowPropertiesAsync()
+    {
+        var entry = _fileList.GetSelectedEntry();
+        if (entry == null) return;
+        await PropertiesModal.ShowAsync(_ws, entry, _mainWindow);
     }
 
     private async Task NewItemAsync(bool isDirectory)

@@ -3,12 +3,15 @@ using SharpConsoleUI.Builders;
 
 namespace CXFiles.UI.Modals;
 
+public enum ModalCloseReason { Escape, CloseButton, Explicit }
+
 public abstract class ModalBase<TResult>
 {
     protected Window? Modal { get; private set; }
     protected ConsoleWindowSystem WindowSystem { get; }
     protected Window? ParentWindow { get; }
     private TaskCompletionSource<TResult>? _tcs;
+    private bool _closedExplicitly;
 
     protected ModalBase(ConsoleWindowSystem ws, Window? parentWindow = null)
     {
@@ -19,11 +22,15 @@ public abstract class ModalBase<TResult>
     public Task<TResult> ShowAsync()
     {
         _tcs = new TaskCompletionSource<TResult>();
+        _closedExplicitly = false;
         CreateModal();
         BuildContent();
 
-        // Handle close button — complete with default result
-        Modal!.OnClosed += (_, _) => _tcs?.TrySetResult(GetDefaultResult());
+        Modal!.OnClosed += (_, _) =>
+        {
+            if (!_closedExplicitly)
+                _tcs?.TrySetResult(OnClosedByButton());
+        };
 
         WindowSystem.AddWindow(Modal);
         WindowSystem.SetActiveWindow(Modal);
@@ -32,6 +39,7 @@ public abstract class ModalBase<TResult>
 
     protected void CloseWithResult(TResult result)
     {
+        _closedExplicitly = true;
         if (Modal != null)
         {
             WindowSystem.CloseWindow(Modal);
@@ -41,7 +49,12 @@ public abstract class ModalBase<TResult>
     }
 
     protected abstract void BuildContent();
+
+    /// <summary>Result when Escape is pressed. Override to customize.</summary>
     protected abstract TResult GetDefaultResult();
+
+    /// <summary>Result when the close button [X] is clicked. Defaults to GetDefaultResult().</summary>
+    protected virtual TResult OnClosedByButton() => GetDefaultResult();
 
     protected virtual void CreateModal()
     {

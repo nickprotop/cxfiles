@@ -31,6 +31,7 @@ public partial class CXFilesApp
     private string _currentPath;
     private bool _detailVisible;
     private IDisposable? _fileWatcher;
+    private readonly ClipboardState _clipboard = new();
 
     public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config, OperationManager operations)
     {
@@ -154,6 +155,16 @@ public partial class CXFilesApp
         {
             AddToolbarButton("⧫ Rename [dim]F2[/]", () => _ = RenameSelectedAsync());
             AddToolbarButton("✕ Delete [dim]Del[/]", () => _ = DeleteSelectedAsync());
+            _toolbar.AddItem(new SeparatorControl());
+            AddToolbarButton("⊟ Copy [dim]^C[/]", CopySelected);
+            AddToolbarButton("⊠ Cut [dim]^X[/]", CutSelected);
+        }
+        if (_clipboard.HasContent)
+        {
+            var label = _clipboard.Action == Services.ClipboardAction.Cut
+                ? $"⊡ Paste ({_clipboard.Paths.Count}) [dim]^V[/]"
+                : $"⊡ Paste ({_clipboard.Paths.Count}) [dim]^V[/]";
+            AddToolbarButton(label, () => _ = PasteAsync());
         }
         _toolbar.AddItem(new SeparatorControl());
         AddToolbarButton(_detailVisible ? "◧ Detail [dim]F3[/]" : "◨ Detail [dim]F3[/]", ToggleDetailPanel);

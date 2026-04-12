@@ -55,6 +55,21 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.C when ctrl: // Ctrl+C copy
+                CopySelected();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.X when ctrl: // Ctrl+X cut
+                CutSelected();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.V when ctrl: // Ctrl+V paste
+                _ = PasteAsync();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.H when ctrl: // Ctrl+H toggle hidden
                 _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
                 _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
@@ -143,6 +158,70 @@ public partial class CXFilesApp
                     "Error", $"Rename failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
             }
         }
+    }
+
+    private void CopySelected()
+    {
+        var entries = GetCheckedEntries();
+        if (entries.Count == 0) return;
+        _clipboard.SetCopy(entries.Select(e => e.FullPath));
+        UpdateToolbar();
+    }
+
+    private void CutSelected()
+    {
+        var entries = GetCheckedEntries();
+        if (entries.Count == 0) return;
+        _clipboard.SetCut(entries.Select(e => e.FullPath));
+        UpdateToolbar();
+    }
+
+    private async Task PasteAsync()
+    {
+        if (!_clipboard.HasContent) return;
+
+        var isCut = _clipboard.Action == Services.ClipboardAction.Cut;
+        var opType = isCut ? Services.OperationType.Move : Services.OperationType.Copy;
+        var paths = _clipboard.Paths.ToList();
+        var desc = $"{(isCut ? "Moving" : "Copying")} {paths.Count} item{(paths.Count > 1 ? "s" : "")}";
+        var op = _operations.StartOperation(opType, desc);
+        UpdateStatusLine();
+
+        if (isCut) _clipboard.Clear();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                foreach (var sourcePath in paths)
+                {
+                    op.Cts.Token.ThrowIfCancellationRequested();
+                    var name = Path.GetFileName(sourcePath);
+                    var destPath = Path.Combine(_currentPath, name);
+
+                    if (isCut)
+                        await _fs.MoveAsync(sourcePath, destPath, false, op.Cts.Token);
+                    else
+                        await _fs.CopyAsync(sourcePath, destPath, false,
+                            new Progress<(long bytes, long total)>(p =>
+                            {
+                                op.BytesCompleted = p.bytes;
+                                op.BytesTotal = p.total;
+                            }), op.Cts.Token);
+                }
+                _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                Refresh();
+            }
+            catch (OperationCanceledException)
+            {
+                _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+            }
+            catch (Exception ex)
+            {
+                _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+            }
+            UpdateStatusLine();
+        });
     }
 
     private async Task NewItemAsync(bool isDirectory)

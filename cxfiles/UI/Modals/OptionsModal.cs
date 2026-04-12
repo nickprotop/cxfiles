@@ -23,6 +23,7 @@ public class OptionsModal : ModalBase<bool>
     protected override int GetWidth() => 60;
     protected override int GetHeight() => 20;
     protected override bool GetDefaultResult() => false;
+    protected override bool OnClosedByButton() => true; // settings auto-saved, apply on close
 
     protected override void BuildContent()
     {

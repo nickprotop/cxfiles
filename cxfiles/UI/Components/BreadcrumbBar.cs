@@ -27,24 +27,26 @@ public class BreadcrumbBar
     public void Update(string path)
     {
         _bar.ClearAll();
-        _bar.AddLeftText("[bold cyan]◈ cxfiles[/]", onClick: () => SegmentClicked?.Invoke("/"));
+
+        var root = Path.GetPathRoot(path) ?? "/";
+        _bar.AddLeftText("[bold cyan]◈ cxfiles[/]", onClick: () => SegmentClicked?.Invoke(root));
 
         var parts = path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        var accumulated = Path.GetPathRoot(path) ?? "/";
+        var accumulated = root;
 
         for (int i = 0; i < parts.Length; i++)
         {
-            var segment = parts[i];
-            var fullPath = accumulated;
+            accumulated = Path.Combine(accumulated, parts[i]);
+            var clickPath = accumulated; // capture for closure
+
             if (i == parts.Length - 1)
             {
-                _bar.AddLeftText($"[bold]{segment}[/]");
+                _bar.AddLeftText($"[bold]{parts[i]}[/]");
             }
             else
             {
-                _bar.AddLeftText(segment, onClick: () => SegmentClicked?.Invoke(fullPath));
+                _bar.AddLeftText(parts[i], onClick: () => SegmentClicked?.Invoke(clickPath));
             }
-            accumulated = Path.Combine(accumulated, segment);
         }
     }
 }

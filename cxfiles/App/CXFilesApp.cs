@@ -28,6 +28,7 @@ public partial class CXFilesApp
     // State
     private string _currentPath;
     private bool _detailVisible;
+    private IDisposable? _fileWatcher;
 
     public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config)
     {
@@ -55,6 +56,14 @@ public partial class CXFilesApp
         // TODO: expand tree to path
         UpdateStatusLine();
         UpdateToolbar();
+
+        // Restart file watcher for the new directory
+        _fileWatcher?.Dispose();
+        try
+        {
+            _fileWatcher = _fs.WatchDirectory(path, _ => Refresh());
+        }
+        catch { /* watcher may fail on some filesystems */ }
     }
 
     private void NavigateUp()

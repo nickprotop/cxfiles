@@ -49,11 +49,31 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.OemComma when ctrl: // Ctrl+,
+            case ConsoleKey.O when ctrl:       // Ctrl+O for options
+                _ = ShowOptionsAsync();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.H when ctrl: // Ctrl+H toggle hidden
+                _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
+                _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+                _config.Save();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.Q when ctrl:
                 _ws.Shutdown();
                 e.Handled = true;
                 break;
         }
+    }
+
+    private async Task ShowOptionsAsync()
+    {
+        var changed = await UI.Modals.OptionsModal.ShowAsync(_ws, _config, _mainWindow);
+        _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+        Refresh();
     }
 
     private async Task DeleteSelectedAsync()

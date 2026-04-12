@@ -73,9 +73,9 @@ public partial class CXFilesApp
         _mainGrid = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
-            .Column(col => col.Flex(1).Add(_folderTree.Control))
-            .Column(col => col.Flex(3).Add(_fileList.Control))
-            .Column(col => col.Flex(1).Add(_detailPanel.Control))
+            .Column(col => col.Width(25).Add(_folderTree.Control))
+            .Column(col => col.Flex(1).Add(_fileList.Control))
+            .Column(col => col.Width(30).Add(_detailPanel.Control))
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
             .Build();

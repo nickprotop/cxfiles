@@ -11,8 +11,8 @@ public class FileListPanel
 {
     private readonly IFileSystemService _fs;
     private readonly TableControl _table;
+    private readonly FileDataSource _dataSource;
     private string _currentPath = "";
-    private List<FileEntry> _entries = new();
     private bool _showHidden;
 
     public TableControl Control => _table;
@@ -25,52 +25,41 @@ public class FileListPanel
     {
         _fs = fs;
         _showHidden = showHidden;
+        _dataSource = new FileDataSource();
 
         _table = Controls.Table()
-            .AddColumn("Name")
-            .AddColumn("Size")
-            .AddColumn("Modified")
-            .AddColumn("Type")
+            .WithDataSource(_dataSource)
             .Interactive()
             .WithMultiSelect()
             .WithBorderStyle(BorderStyle.None)
             .Build();
         _table.VerticalAlignment = VerticalAlignment.Fill;
+        _table.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         _table.RowActivated += (_, rowIndex) =>
         {
-            if (rowIndex >= 0 && rowIndex < _entries.Count)
-                FileActivated?.Invoke(_entries[rowIndex]);
+            var entry = _dataSource.GetEntry(rowIndex);
+            if (entry != null)
+                FileActivated?.Invoke(entry);
         };
 
         _table.SelectedRowChanged += (_, idx) =>
         {
-            if (idx >= 0 && idx < _entries.Count)
-                SelectionChanged?.Invoke(_entries[idx]);
+            var entry = _dataSource.GetEntry(idx);
+            if (entry != null)
+                SelectionChanged?.Invoke(entry);
         };
     }
 
     public void Navigate(string path)
     {
         if (!_fs.DirectoryExists(path)) return;
-
         _currentPath = path;
-        _entries = _fs.ListDirectory(path)
-            .Where(e => _showHidden || !e.IsHidden)
-            .OrderByDescending(e => e.IsDirectory)
-            .ThenBy(e => e.Name)
-            .ToList();
 
-        _table.ClearRows();
-        foreach (var entry in _entries)
-        {
-            var nameColor = entry.IsDirectory ? "cyan" : entry.IsHidden ? "grey50" : "white";
-            _table.AddRow(
-                $"[{nameColor}]{entry.Icon} {SharpConsoleUI.Parsing.MarkupParser.Escape(entry.Name)}[/]",
-                entry.DisplaySize,
-                entry.DisplayDate,
-                entry.TypeDescription);
-        }
+        var entries = _fs.ListDirectory(path)
+            .Where(e => _showHidden || !e.IsHidden);
+
+        _dataSource.SetEntries(entries);
     }
 
     public void SetShowHidden(bool show)
@@ -83,7 +72,7 @@ public class FileListPanel
     public FileEntry? GetSelectedEntry()
     {
         var idx = _table.SelectedRowIndex;
-        return idx >= 0 && idx < _entries.Count ? _entries[idx] : null;
+        return _dataSource.GetEntry(idx);
     }
 
     public void Refresh() => Navigate(_currentPath);

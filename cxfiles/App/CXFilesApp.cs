@@ -190,11 +190,11 @@ public partial class CXFilesApp
         if (_tabs.Count >= _config.Config.MaxTabs) return;
         var path = ActiveTab.Path;
         var tab = CreateTab(path);
+        tab.FileList.Navigate(path);
         _tabs.Add(tab);
         _tabControl.AddTab(tab.TabTitle, tab.Container, isClosable: true);
         _tabControl.ActiveTabIndex = _tabs.Count - 1;
         UpdateTabHeader();
-        tab.FileList.Navigate(path);
     }
 
     private void CloseActiveTab()

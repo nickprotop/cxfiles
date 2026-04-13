@@ -51,7 +51,7 @@ public class BreadcrumbBar
             _right.AddRightText($"[grey70]{label}[/]", () => NavigateTo(p));
         }
 
-        _right.AddRightSeparator();
+        if (!first) _right.AddRightSeparator();
         _right.AddRightText("[grey70]Trash[/]", () => TrashClicked?.Invoke());
 
         _container = Controls.HorizontalGrid()

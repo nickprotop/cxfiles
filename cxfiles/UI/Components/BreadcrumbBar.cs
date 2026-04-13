@@ -14,6 +14,7 @@ public class BreadcrumbBar
     public HorizontalGridControl Control => _container;
 
     public event Action<string>? SegmentClicked;
+    public event Action? TrashClicked;
 
     public BreadcrumbBar()
     {
@@ -49,6 +50,9 @@ public class BreadcrumbBar
             var p = locPath;
             _right.AddRightText($"[grey70]{label}[/]", () => NavigateTo(p));
         }
+
+        _right.AddRightSeparator();
+        _right.AddRightText("[grey70]Trash[/]", () => TrashClicked?.Invoke());
 
         _container = Controls.HorizontalGrid()
             .StickyTop()

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using SharpConsoleUI;
 using SharpConsoleUI.Configuration;
@@ -40,6 +41,12 @@ class Program
         services.AddSingleton<IConfigService, ConfigService>();
         services.AddSingleton<OperationManager>();
 
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            services.AddSingleton<ITrashService, WindowsTrashService>();
+        else
+            services.AddSingleton<ITrashService, XdgTrashService>();
+        services.AddSingleton<SudoService>();
+
         var provider = services.BuildServiceProvider();
 
         // Run
@@ -47,7 +54,9 @@ class Program
             provider.GetRequiredService<ConsoleWindowSystem>(),
             provider.GetRequiredService<IFileSystemService>(),
             provider.GetRequiredService<IConfigService>(),
-            provider.GetRequiredService<OperationManager>());
+            provider.GetRequiredService<OperationManager>(),
+            provider.GetRequiredService<ITrashService>(),
+            provider.GetRequiredService<SudoService>());
 
         app.Run();
 

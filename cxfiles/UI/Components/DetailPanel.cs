@@ -26,6 +26,7 @@ public class DetailPanel
         _panel = Controls.ScrollablePanel()
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithBorderStyle(BorderStyle.None)
+            .WithBackgroundColor(new Color(15, 50, 40, 140))
             .WithMargin(1, 0, 0, 0)
             .Build();
         _panel.AddControl(_info);

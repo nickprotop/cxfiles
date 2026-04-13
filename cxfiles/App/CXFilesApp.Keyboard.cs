@@ -82,6 +82,16 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.P when ctrl: // Ctrl+P operations portal
+                ShowOperationsPortal();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.B when ctrl: // Ctrl+B clipboard portal
+                if (_clipboard.HasContent) ShowClipboardPortal();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.Q when ctrl:
                 _ws.Shutdown();
                 e.Handled = true;
@@ -111,37 +121,43 @@ public partial class CXFilesApp
         {
             message = $"Delete {entries.Count} items?";
         }
-        var confirmed = await ConfirmModal.ShowAsync(_ws, "Delete", message, _mainWindow);
 
-        if (confirmed)
+        var action = await DeleteConfirmModal.ShowAsync(_ws, message, _trash.IsAvailable, _mainWindow);
+        if (action == DeleteAction.Cancel) return;
+
+        bool useTrash = action == DeleteAction.Trash;
+        var verb = useTrash ? "Trashing" : "Deleting";
+        var desc = entries.Count == 1 ? $"{verb} {entries[0].Name}" : $"{verb} {entries.Count} items";
+        var op = _operations.StartOperation(Services.OperationType.Delete, desc);
+        UpdateStatusLine();
+
+        _ = Task.Run(async () =>
         {
-            var desc = entries.Count == 1 ? $"Deleting {entries[0].Name}" : $"Deleting {entries.Count} items";
-            var op = _operations.StartOperation(Services.OperationType.Delete, desc);
-            UpdateStatusLine();
-
-            _ = Task.Run(async () =>
+            try
             {
-                try
+                foreach (var entry in entries)
                 {
-                    foreach (var entry in entries)
-                    {
-                        op.Cts.Token.ThrowIfCancellationRequested();
+                    op.Cts.Token.ThrowIfCancellationRequested();
+                    op.CurrentFile = entry.Name;
+
+                    if (useTrash)
+                        await _trash.TrashAsync(entry.FullPath, op.Cts.Token);
+                    else
                         await _fs.DeleteAsync(entry.FullPath, entry.IsDirectory, op.Cts.Token);
-                    }
-                    _operations.CompleteOperation(op, Services.OperationStatus.Completed);
-                    _ws.EnqueueOnUIThread(Refresh);
                 }
-                catch (OperationCanceledException)
-                {
-                    _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
-                }
-                catch (Exception ex)
-                {
-                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
-                }
-                _ws.EnqueueOnUIThread(UpdateStatusLine);
-            });
-        }
+                _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                _ws.EnqueueOnUIThread(Refresh);
+            }
+            catch (OperationCanceledException)
+            {
+                _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+            }
+            catch (Exception ex)
+            {
+                _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+            }
+            _ws.EnqueueOnUIThread(UpdateStatusLine);
+        });
     }
 
     private async Task RenameSelectedAsync()
@@ -171,6 +187,7 @@ public partial class CXFilesApp
         if (entries.Count == 0) return;
         _clipboard.SetCopy(entries.Select(e => e.FullPath));
         UpdateToolbar();
+        UpdateStatusLine();
     }
 
     private void CutSelected()
@@ -179,6 +196,7 @@ public partial class CXFilesApp
         if (entries.Count == 0) return;
         _clipboard.SetCut(entries.Select(e => e.FullPath));
         UpdateToolbar();
+        UpdateStatusLine();
     }
 
     private async Task PasteAsync()

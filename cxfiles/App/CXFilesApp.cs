@@ -7,6 +7,7 @@ using SharpConsoleUI.Rendering;
 using CXFiles.Models;
 using CXFiles.Services;
 using CXFiles.UI.Components;
+using CXFiles.UI.Modals;
 
 namespace CXFiles.App;
 
@@ -16,6 +17,8 @@ public partial class CXFilesApp
     private readonly IFileSystemService _fs;
     private readonly IConfigService _config;
     private readonly OperationManager _operations;
+    private readonly ITrashService _trash;
+    private readonly SudoService _sudo;
     private Window? _mainWindow;
 
     // UI Components
@@ -32,6 +35,8 @@ public partial class CXFilesApp
     private UI.ContextMenuBuilder _contextMenu = null!;
     private UI.OperationsPortal? _opsPortal;
     private LayoutNode? _opsPortalNode;
+    private UI.ClipboardPortal? _clipPortal;
+    private LayoutNode? _clipPortalNode;
 
     // State
     private string _currentPath;
@@ -39,12 +44,18 @@ public partial class CXFilesApp
     private IDisposable? _fileWatcher;
     private readonly ClipboardState _clipboard = new();
 
-    public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config, OperationManager operations)
+    // State flags
+    private bool _viewingTrash;
+
+    public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config,
+        OperationManager operations, ITrashService trash, SudoService sudo)
     {
         _ws = ws;
         _fs = fs;
         _config = config;
         _operations = operations;
+        _trash = trash;
+        _sudo = sudo;
         _currentPath = config.Config.DefaultPath;
         _detailVisible = config.Config.ShowDetailPanel;
     }
@@ -57,13 +68,57 @@ public partial class CXFilesApp
         _ws.Run();
     }
 
+    public void NavigateToTrash()
+    {
+        _viewingTrash = true;
+
+        if (_detailVisible)
+        {
+            _detailPanel.Control.Visible = false;
+            if (_mainGrid != null)
+            {
+                var splitters = _mainGrid.Splitters;
+                if (splitters.Count >= 2) splitters[1].Visible = false;
+                var columns = _mainGrid.Columns;
+                if (columns.Count >= 3) columns[2].Visible = false;
+            }
+        }
+
+        _breadcrumb.Update(_trash.TrashPath);
+        _fileListHeader?.ClearAll();
+        _fileListHeader?.AddLeftText("[grey70]Trash[/]");
+        var trashCount = _trash.TrashCount;
+        _fileListHeader?.AddRightText($"[grey50]{trashCount} items[/]");
+        var trashSource = new UI.Components.TrashDataSource();
+        trashSource.SetEntries(_trash.ListTrash());
+        _fileList.Control.DataSource = trashSource;
+        UpdateStatusLine();
+        UpdateToolbar();
+        _mainWindow?.Invalidate(true);
+    }
+
     public void NavigateTo(string path)
     {
         if (!_fs.DirectoryExists(path)) return;
+
+        if (_viewingTrash && _detailVisible)
+        {
+            _detailPanel.Control.Visible = true;
+            if (_mainGrid != null)
+            {
+                var splitters = _mainGrid.Splitters;
+                if (splitters.Count >= 2) splitters[1].Visible = true;
+                var columns = _mainGrid.Columns;
+                if (columns.Count >= 3) columns[2].Visible = true;
+            }
+        }
+
+        _viewingTrash = false;
         _currentPath = path;
         _breadcrumb.Update(path);
         _fileList.Navigate(path);
         _folderTree.ExpandToPath(path);
+        _detailPanel.ShowEntry(null);
         UpdateFileListHeader();
         UpdateStatusLine();
         UpdateToolbar();
@@ -142,6 +197,55 @@ public partial class CXFilesApp
         _opsPortal.DismissRequested += (_, _) => DismissOperationsPortal();
     }
 
+    private void ShowClipboardPortal()
+    {
+        if (_mainWindow == null || !_clipboard.HasContent) return;
+        DismissClipboardPortal();
+
+        int anchorX = 2;
+        int anchorY = _mainWindow.Height - 3;
+
+        _clipPortal = new UI.ClipboardPortal(_clipboard, anchorX, anchorY,
+            _mainWindow.Width, _mainWindow.Height);
+        _clipPortal.Container = _mainWindow;
+        _clipPortalNode = _mainWindow.CreatePortal(_statusLine.Control, _clipPortal);
+
+        _clipPortal.Dismissed += (_, _) => DismissClipboardPortal();
+        _clipPortal.ClearRequested += (_, _) =>
+        {
+            _clipboard.Clear();
+            DismissClipboardPortal();
+            UpdateStatusLine();
+            UpdateToolbar();
+        };
+        _clipPortal.RemoveRequested += path =>
+        {
+            _clipboard.Paths.Remove(path);
+            if (_clipboard.Paths.Count == 0)
+            {
+                _clipboard.Clear();
+                DismissClipboardPortal();
+            }
+            else
+            {
+                DismissClipboardPortal();
+                ShowClipboardPortal();
+            }
+            UpdateStatusLine();
+            UpdateToolbar();
+        };
+    }
+
+    private void DismissClipboardPortal()
+    {
+        if (_clipPortalNode != null && _mainWindow != null)
+        {
+            _mainWindow.RemovePortal(_statusLine.Control, _clipPortalNode);
+            _clipPortalNode = null;
+            _clipPortal = null;
+        }
+    }
+
     private void DismissOperationsPortal()
     {
         if (_opsPortalNode != null && _mainWindow != null)
@@ -171,7 +275,9 @@ public partial class CXFilesApp
             _detailVisible,
             _config.Config.ShowHiddenFiles,
             _operations.ActiveCount,
-            _operations.TotalCount);
+            _operations.TotalCount,
+            _clipboard.HasContent ? _clipboard.Paths.Count : 0,
+            _clipboard.HasContent ? (_clipboard.Action == Services.ClipboardAction.Cut ? "Cut" : "Copy") : null);
     }
 
     private int GetCheckedCount()
@@ -205,6 +311,12 @@ public partial class CXFilesApp
         if (_toolbar == null) return;
         _toolbar.Clear();
 
+        if (_viewingTrash)
+        {
+            UpdateTrashToolbar();
+            return;
+        }
+
         var checkedCount = GetCheckedCount();
         var hasSelection = checkedCount > 0;
         var multiSelect = checkedCount > 1;
@@ -234,6 +346,91 @@ public partial class CXFilesApp
             AddToolbarButton($"⊡ Paste ({_clipboard.Paths.Count}) [grey50]^V[/]",
                 () => _ = PasteAsync());
         }
+    }
+
+    private void UpdateTrashToolbar()
+    {
+        var hasSelection = _fileList.Control.SelectedRowIndex >= 0;
+
+        if (hasSelection)
+        {
+            AddToolbarButton("↩ Restore [grey50]Enter[/]", () => _ = RestoreFromTrashAsync());
+            AddToolbarButton("✕ Delete Permanently [grey50]Del[/]", () => _ = DeleteFromTrashAsync());
+            _toolbar.AddItem(new SeparatorControl());
+        }
+        AddToolbarButton("⊗ Empty Trash", () => _ = EmptyTrashAsync());
+        _toolbar.AddItem(new SeparatorControl());
+        AddToolbarButton("↑ Back [grey50]Bksp[/]", () => NavigateTo(_currentPath));
+    }
+
+    private async Task RestoreFromTrashAsync()
+    {
+        var idx = _fileList.Control.SelectedRowIndex;
+        if (_fileList.Control.DataSource is not UI.Components.TrashDataSource source) return;
+        var entry = source.GetEntry(idx);
+        if (entry == null) return;
+
+        var op = _operations.StartOperation(Services.OperationType.Move, $"Restoring {entry.TrashedName}");
+        try
+        {
+            await _trash.RestoreAsync(entry.TrashedName, CancellationToken.None);
+            _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+        }
+        catch (Exception ex)
+        {
+            _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+        }
+        NavigateToTrash();
+    }
+
+    private async Task DeleteFromTrashAsync()
+    {
+        var idx = _fileList.Control.SelectedRowIndex;
+        if (_fileList.Control.DataSource is not UI.Components.TrashDataSource source) return;
+        var entry = source.GetEntry(idx);
+        if (entry == null) return;
+
+        var confirmed = await ConfirmModal.ShowAsync(_ws, "Delete Permanently",
+            $"Permanently delete \"{entry.TrashedName}\"? This cannot be undone.", _mainWindow);
+        if (!confirmed) return;
+
+        try
+        {
+            var path = Path.Combine(_trash.TrashPath, "files", entry.TrashedName);
+            if (Directory.Exists(path)) Directory.Delete(path, true);
+            else if (File.Exists(path)) File.Delete(path);
+
+            var infoPath = Path.Combine(_trash.TrashPath, "info", entry.TrashedName + ".trashinfo");
+            if (File.Exists(infoPath)) File.Delete(infoPath);
+        }
+        catch (Exception ex)
+        {
+            _ws.NotificationStateService.ShowNotification(
+                "Error", $"Delete failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+        }
+        NavigateToTrash();
+    }
+
+    private async Task EmptyTrashAsync()
+    {
+        var count = _trash.TrashCount;
+        if (count == 0) return;
+
+        var confirmed = await ConfirmModal.ShowAsync(_ws, "Empty Trash",
+            $"Permanently delete all {count} items in trash? This cannot be undone.", _mainWindow);
+        if (!confirmed) return;
+
+        var op = _operations.StartOperation(Services.OperationType.Delete, $"Emptying trash ({count} items)");
+        try
+        {
+            await _trash.EmptyTrashAsync(CancellationToken.None);
+            _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+        }
+        catch (Exception ex)
+        {
+            _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+        }
+        NavigateToTrash();
     }
 
     private void AddToolbarButton(string label, Action action)

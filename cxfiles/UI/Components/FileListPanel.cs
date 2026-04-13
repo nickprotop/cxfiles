@@ -66,6 +66,9 @@ public class FileListPanel
         if (!_fs.DirectoryExists(path)) return;
         _currentPath = path;
 
+        if (_table.DataSource != _dataSource)
+            _table.DataSource = _dataSource;
+
         var entries = _fs.ListDirectory(path)
             .Where(e => _showHidden || !e.IsHidden);
 

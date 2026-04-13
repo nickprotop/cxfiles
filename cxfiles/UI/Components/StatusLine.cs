@@ -13,6 +13,7 @@ public class StatusLine
     public event Action? DetailToggled;
     public event Action? HiddenToggled;
     public event Action? OperationsClicked;
+    public event Action? ClipboardClicked;
     public event Action? RefreshClicked;
 
     public StatusLine()
@@ -28,7 +29,7 @@ public class StatusLine
     }
 
     public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
-        int activeOps = 0, int totalOps = 0)
+        int activeOps = 0, int totalOps = 0, int clipboardCount = 0, string? clipboardAction = null)
     {
         _bar.BatchUpdate(() =>
         {
@@ -42,17 +43,26 @@ public class StatusLine
                 _bar.AddLeftText($"[cyan]{selectedCount} selected[/]");
             }
 
+            // Left: clipboard indicator
+            if (clipboardCount > 0)
+            {
+                _bar.AddLeftSeparator();
+                var actionLabel = clipboardAction == "Cut" ? "cut" : "copied";
+                _bar.AddLeftText($"[cyan]{clipboardCount} {actionLabel}[/] [grey50]^B[/]",
+                    () => ClipboardClicked?.Invoke());
+            }
+
             // Left: operations indicator
             if (activeOps > 0)
             {
                 _bar.AddLeftSeparator();
-                _bar.AddLeftText($"[yellow]⟳ {activeOps} running[/]",
+                _bar.AddLeftText($"[yellow]⟳ {activeOps} running[/] [grey50]^P[/]",
                     () => OperationsClicked?.Invoke());
             }
             else if (totalOps > 0)
             {
                 _bar.AddLeftSeparator();
-                _bar.AddLeftText($"[green]✓ {totalOps} done[/]",
+                _bar.AddLeftText($"[green]✓ {totalOps} done[/] [grey50]^P[/]",
                     () => OperationsClicked?.Invoke());
             }
 

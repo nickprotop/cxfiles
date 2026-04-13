@@ -15,6 +15,7 @@ public partial class CXFilesApp
         // Breadcrumb bar
         _breadcrumb = new BreadcrumbBar();
         _breadcrumb.SegmentClicked += path => NavigateTo(path);
+        _breadcrumb.TrashClicked += NavigateToTrash;
 
         // Toolbar
         _toolbar = Controls.Toolbar()
@@ -74,6 +75,7 @@ public partial class CXFilesApp
         _statusLine.RefreshClicked += Refresh;
         _statusLine.OptionsClicked += () => _ = ShowOptionsAsync();
         _statusLine.OperationsClicked += ShowOperationsPortal;
+        _statusLine.ClipboardClicked += ShowClipboardPortal;
 
         // Top rule
         var topRule = Controls.RuleBuilder()
@@ -167,13 +169,19 @@ public partial class CXFilesApp
             .OnKeyPressed(OnGlobalKeyPressed)
             .Build();
 
-        // Route preview keys to context menu / operations portal
+        // Route preview keys to context menu / operations / clipboard portals
         _mainWindow.PreviewKeyPressed += (_, e) =>
         {
             if (_contextMenu.ProcessPreviewKey(e)) return;
             if (_opsPortal != null)
             {
                 _opsPortal.ProcessKey(e.KeyInfo);
+                e.Handled = true;
+                return;
+            }
+            if (_clipPortal != null)
+            {
+                _clipPortal.ProcessKey(e.KeyInfo);
                 e.Handled = true;
             }
         };

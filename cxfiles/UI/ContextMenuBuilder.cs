@@ -74,6 +74,40 @@ public class ContextMenuBuilder
             new("Properties", "F4", () => OnProperties?.Invoke()),
         });
 
+        ShowPortal(items, window, owner, screenX, screenY);
+    }
+
+    public void ShowForFolder(string folderPath, Window window, IWindowControl owner,
+        int screenX, int screenY, Action<string> onNavigate, bool hasClipboard)
+    {
+        Dismiss(window);
+
+        var items = new List<ContextMenuItem>
+        {
+            new("Open", "Enter", () => onNavigate(folderPath)),
+            new("-"),
+            new("New Folder", "^⇧N", () => OnNewItem?.Invoke(true)),
+            new("New File", "^N", () => OnNewItem?.Invoke(false)),
+        };
+
+        if (hasClipboard)
+            items.Add(new("Paste", "^V", () => OnPaste?.Invoke()));
+
+        items.AddRange(new ContextMenuItem[]
+        {
+            new("-"),
+            new("Rename", "F2", () => OnRename?.Invoke()),
+            new("Delete", "Del", () => OnDelete?.Invoke()),
+            new("-"),
+            new("Refresh", "F5", () => OnRefresh?.Invoke()),
+        });
+
+        ShowPortal(items, window, owner, screenX, screenY);
+    }
+
+    private void ShowPortal(List<ContextMenuItem> items, Window window,
+        IWindowControl owner, int screenX, int screenY)
+    {
         var portal = new ContextMenuPortal(items, screenX, screenY, window.Width, window.Height);
         portal.Container = window;
         _portal = portal;

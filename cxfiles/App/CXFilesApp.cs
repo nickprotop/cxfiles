@@ -60,7 +60,7 @@ public partial class CXFilesApp
         _currentPath = path;
         _breadcrumb.Update(path);
         _fileList.Navigate(path);
-        // TODO: expand tree to path
+        _folderTree.ExpandToPath(path);
         UpdateStatusLine();
         UpdateToolbar();
 
@@ -115,6 +115,7 @@ public partial class CXFilesApp
     private void Refresh()
     {
         _fileList.Refresh();
+        _folderTree.RefreshNode(_folderTree.Control.SelectedNode);
         UpdateStatusLine();
     }
 

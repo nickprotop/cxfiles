@@ -162,5 +162,17 @@ public partial class CXFilesApp
                     _clipboard.HasContent);
             }
         };
+
+        // Right-click on folder tree opens folder context menu
+        _folderTree.FolderRightClicked += path =>
+        {
+            if (_mainWindow != null)
+            {
+                var node = _folderTree.Control.SelectedNode;
+                var pos = _folderTree.Control.SelectedIndex;
+                _contextMenu.ShowForFolder(path, _mainWindow, _folderTree.Control,
+                    3, pos + 2, NavigateTo, _clipboard.HasContent);
+            }
+        };
     }
 }

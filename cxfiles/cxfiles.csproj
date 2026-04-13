@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>CXFiles</RootNamespace>
     <AssemblyName>cxfiles</AssemblyName>
+    <Version>0.0.1</Version>
   </PropertyGroup>
 
   <!-- Local dev: use ConsoleEx project reference when available as sibling repo -->
@@ -15,11 +16,11 @@
   </ItemGroup>
   <!-- CI/release: use NuGet package -->
   <ItemGroup Condition="!Exists('../../ConsoleEx/SharpConsoleUI/SharpConsoleUI.csproj')">
-    <PackageReference Include="SharpConsoleUI" Version="2.4.56" />
+    <PackageReference Include="SharpConsoleUI" Version="2.4.57" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
   </ItemGroup>
 
 </Project>

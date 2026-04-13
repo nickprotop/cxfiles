@@ -33,7 +33,8 @@ class Program
         var ws = new ConsoleWindowSystem(driver,
             options: new ConsoleWindowSystemOptions(
                 ShowTopPanel: false,
-                ShowBottomPanel: false));
+                ShowBottomPanel: false,
+                WindowCycleKey: null));
         services.AddSingleton(ws);
 
         // Services

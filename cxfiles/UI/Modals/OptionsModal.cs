@@ -86,6 +86,26 @@ public class OptionsModal : ModalBase<bool>
             _config.Save();
         };
         panel.AddControl(detailCheck);
+
+        panel.AddControl(Controls.Markup()
+            .AddEmptyLine()
+            .AddLine("[bold]Tabs[/]")
+            .AddEmptyLine()
+            .Build());
+
+        var syncTreeCheck = Controls.Checkbox("Sync folder tree to active tab")
+            .Checked(_config.Config.SyncTreeToTab)
+            .Build();
+        syncTreeCheck.CheckedChanged += (_, _) =>
+        {
+            _config.Config.SyncTreeToTab = syncTreeCheck.Checked;
+            _config.Save();
+        };
+        panel.AddControl(syncTreeCheck);
+
+        panel.AddControl(Controls.Markup()
+            .AddLine($"[dim]Maximum tabs: {_config.Config.MaxTabs} (edit config file to change)[/]")
+            .Build());
     }
 
     private void BuildAppearancePage(ScrollablePanelControl panel)

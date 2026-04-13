@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Events;
 using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Rendering;
@@ -32,18 +33,32 @@ public partial class CXFilesApp
         _folderTree.FolderSelected += path => NavigateTo(path);
         _folderTree.LoadRoots();
 
-        // File list (center panel)
-        _fileList = new FileListPanel(_fs, _config.Config.ShowHiddenFiles);
-        _fileList.FileActivated += entry =>
+        // Tab control for file list (center panel)
+        _tabControl = new TabControlBuilder()
+            .WithHeaderStyle(TabHeaderStyle.Classic)
+            .Fill()
+            .Build();
+        _tabControl.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _tabControl.VerticalAlignment = VerticalAlignment.Fill;
+        _tabControl.BackgroundColor = Color.Transparent;
+        _tabControl.ShowTabHeader = false;
+
+        // Create first tab
+        var firstTab = CreateTab(_config.Config.DefaultPath);
+        _tabs.Add(firstTab);
+        _tabControl.AddTab(firstTab.TabTitle, firstTab.Container, isClosable: true);
+
+        // Tab events
+        _tabControl.TabChanged += (_, e) => OnTabChanged(e);
+        _tabControl.TabCloseRequested += (_, e) =>
         {
-            if (entry.IsDirectory)
-                NavigateTo(entry.FullPath);
-        };
-        _fileList.SelectionChanged += entry =>
-        {
-            _detailPanel.ShowEntry(entry);
-            UpdateStatusLine();
-            UpdateToolbar();
+            if (_tabControl.TabCount > 1)
+            {
+                _tabs[e.Index].Dispose();
+                _tabs.RemoveAt(e.Index);
+                _tabControl.RemoveTab(e.Index);
+                UpdateTabHeader();
+            }
         };
 
         // Context menu
@@ -68,7 +83,8 @@ public partial class CXFilesApp
         _statusLine.HiddenToggled += () =>
         {
             _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
-            _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+            foreach (var t in _tabs)
+                t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
             _config.Save();
             UpdateStatusLine();
         };
@@ -91,7 +107,6 @@ public partial class CXFilesApp
 
         // Set controls to stretch horizontally
         _folderTree.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
-        _fileList.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
         _detailPanel.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         // Panel headers (cxpost pattern)
@@ -103,13 +118,6 @@ public partial class CXFilesApp
             .Build();
         _treeHeader.BackgroundColor = panelHeaderBg;
         _treeHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
-
-        _fileListHeader = Controls.StatusBar()
-            .AddLeftText("[grey70]Files[/]")
-            .WithMargin(1, 0, 0, 0)
-            .Build();
-        _fileListHeader.BackgroundColor = panelHeaderBg;
-        _fileListHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         _detailHeader = Controls.StatusBar()
             .AddLeftText("[grey70]Detail[/]")
@@ -123,7 +131,7 @@ public partial class CXFilesApp
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(col => col.Width(25).Add(_treeHeader).Add(_folderTree.Control))
-            .Column(col => col.Flex(1).Add(_fileListHeader).Add(_fileList.Control))
+            .Column(col => col.Flex(1).Add(_tabControl))
             .Column(col => col.Width(30).Add(_detailHeader).Add(_detailPanel.Control))
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
@@ -183,18 +191,6 @@ public partial class CXFilesApp
             {
                 _clipPortal.ProcessKey(e.KeyInfo);
                 e.Handled = true;
-            }
-        };
-
-        // Right-click on file list opens context menu
-        _fileList.Control.MouseRightClick += (_, args) =>
-        {
-            var entry = _fileList.GetSelectedEntry();
-            if (entry != null && _mainWindow != null)
-            {
-                _contextMenu.Show(entry, _mainWindow, _fileList.Control,
-                    args.AbsolutePosition.X, args.AbsolutePosition.Y,
-                    _clipboard.HasContent);
             }
         };
 

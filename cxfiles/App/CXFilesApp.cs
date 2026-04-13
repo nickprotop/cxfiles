@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Events;
 using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Rendering;
@@ -24,13 +25,11 @@ public partial class CXFilesApp
     // UI Components
     private BreadcrumbBar _breadcrumb = null!;
     private FolderTreePanel _folderTree = null!;
-    private FileListPanel _fileList = null!;
     private DetailPanel _detailPanel = null!;
     private StatusLine _statusLine = null!;
     private ToolbarControl _toolbar = null!;
     private HorizontalGridControl? _mainGrid;
     private StatusBarControl _treeHeader = null!;
-    private StatusBarControl _fileListHeader = null!;
     private StatusBarControl _detailHeader = null!;
     private UI.ContextMenuBuilder _contextMenu = null!;
     private UI.OperationsPortal? _opsPortal;
@@ -38,14 +37,16 @@ public partial class CXFilesApp
     private UI.ClipboardPortal? _clipPortal;
     private LayoutNode? _clipPortalNode;
 
+    // Tabs
+    private TabControl _tabControl = null!;
+    private readonly List<TabState> _tabs = new();
+
     // State
-    private string _currentPath;
     private bool _detailVisible;
-    private IDisposable? _fileWatcher;
     private readonly ClipboardState _clipboard = new();
 
-    // State flags
-    private bool _viewingTrash;
+    private TabState ActiveTab => _tabs[_tabControl.ActiveTabIndex];
+    private FileListPanel ActiveFileList => ActiveTab.FileList;
 
     public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config,
         OperationManager operations, ITrashService trash, SudoService sudo)
@@ -56,21 +57,21 @@ public partial class CXFilesApp
         _operations = operations;
         _trash = trash;
         _sudo = sudo;
-        _currentPath = config.Config.DefaultPath;
         _detailVisible = config.Config.ShowDetailPanel;
     }
 
     public void Run()
     {
         BuildUI();
-        NavigateTo(_currentPath);
+        NavigateTo(_config.Config.DefaultPath);
         _ws.AddWindow(_mainWindow!);
         _ws.Run();
     }
 
     public void NavigateToTrash()
     {
-        _viewingTrash = true;
+        var tab = ActiveTab;
+        tab.ViewingTrash = true;
 
         if (_detailVisible)
         {
@@ -85,13 +86,14 @@ public partial class CXFilesApp
         }
 
         _breadcrumb.Update(_trash.TrashPath);
-        _fileListHeader?.ClearAll();
-        _fileListHeader?.AddLeftText("[grey70]Trash[/]");
+        tab.Header.ClearAll();
+        tab.Header.AddLeftText("[grey70]Trash[/]");
         var trashCount = _trash.TrashCount;
-        _fileListHeader?.AddRightText($"[grey50]{trashCount} items[/]");
+        tab.Header.AddRightText($"[grey50]{trashCount} items[/]");
+        _tabControl.SetTabTitle(_tabControl.ActiveTabIndex, "Trash");
         var trashSource = new UI.Components.TrashDataSource();
         trashSource.SetEntries(_trash.ListTrash());
-        _fileList.Control.DataSource = trashSource;
+        tab.FileList.Control.DataSource = trashSource;
         UpdateStatusLine();
         UpdateToolbar();
         _mainWindow?.Invalidate(true);
@@ -101,7 +103,9 @@ public partial class CXFilesApp
     {
         if (!_fs.DirectoryExists(path)) return;
 
-        if (_viewingTrash && _detailVisible)
+        var tab = ActiveTab;
+
+        if (tab.ViewingTrash && _detailVisible)
         {
             _detailPanel.Control.Visible = true;
             if (_mainGrid != null)
@@ -113,35 +117,112 @@ public partial class CXFilesApp
             }
         }
 
-        _viewingTrash = false;
-        _currentPath = path;
+        tab.ViewingTrash = false;
+        tab.Path = path;
         _breadcrumb.Update(path);
-        _fileList.Navigate(path);
-        _folderTree.ExpandToPath(path);
+        tab.FileList.Navigate(path);
+        tab.UpdateHeader();
+        _tabControl.SetTabTitle(_tabControl.ActiveTabIndex, tab.TabTitle);
+        if (_config.Config.SyncTreeToTab)
+            _folderTree.ExpandToPath(path);
         _detailPanel.ShowEntry(null);
-        UpdateFileListHeader();
         UpdateStatusLine();
         UpdateToolbar();
 
         // Restart file watcher for the new directory
-        _fileWatcher?.Dispose();
+        tab.FileWatcher?.Dispose();
         try
         {
-            _fileWatcher = _fs.WatchDirectory(path, _ => _ws.EnqueueOnUIThread(Refresh));
+            tab.FileWatcher = _fs.WatchDirectory(path, _ => _ws.EnqueueOnUIThread(Refresh));
         }
         catch { /* watcher may fail on some filesystems */ }
     }
 
+    private TabState CreateTab(string path)
+    {
+        var tab = new TabState(_fs, _config.Config.ShowHiddenFiles, path);
+        tab.FileList.FileActivated += entry =>
+        {
+            if (entry.IsDirectory)
+                NavigateTo(entry.FullPath);
+        };
+        tab.FileList.SelectionChanged += entry =>
+        {
+            if (_tabs.IndexOf(tab) == _tabControl.ActiveTabIndex)
+            {
+                _detailPanel.ShowEntry(entry);
+                UpdateStatusLine();
+                UpdateToolbar();
+            }
+        };
+        tab.FileList.Control.MouseRightClick += (_, args) =>
+        {
+            if (_tabs.IndexOf(tab) != _tabControl.ActiveTabIndex) return;
+            var entry = tab.FileList.GetSelectedEntry();
+            if (entry != null && _mainWindow != null)
+            {
+                _contextMenu.Show(entry, _mainWindow, tab.FileList.Control,
+                    args.AbsolutePosition.X, args.AbsolutePosition.Y,
+                    _clipboard.HasContent);
+            }
+        };
+        return tab;
+    }
+
+    private void UpdateTabHeader()
+    {
+        _tabControl.ShowTabHeader = _tabControl.TabCount >= 2;
+    }
+
+    private void OnTabChanged(TabChangedEventArgs e)
+    {
+        var tab = _tabs[e.NewIndex];
+        _breadcrumb.Update(tab.Path);
+        if (_config.Config.SyncTreeToTab && !tab.ViewingTrash)
+            _folderTree.ExpandToPath(tab.Path);
+        _detailPanel.ShowEntry(tab.FileList.GetSelectedEntry());
+        UpdateStatusLine();
+        UpdateToolbar();
+    }
+
+    private void NewTab()
+    {
+        if (_tabs.Count >= _config.Config.MaxTabs) return;
+        var path = ActiveTab.Path;
+        var tab = CreateTab(path);
+        _tabs.Add(tab);
+        _tabControl.AddTab(tab.TabTitle, tab.Container, isClosable: true);
+        _tabControl.ActiveTabIndex = _tabs.Count - 1;
+        UpdateTabHeader();
+        tab.FileList.Navigate(path);
+    }
+
+    private void CloseActiveTab()
+    {
+        if (_tabControl.TabCount <= 1) return;
+        var idx = _tabControl.ActiveTabIndex;
+        _tabs[idx].Dispose();
+        _tabs.RemoveAt(idx);
+        _tabControl.RemoveTab(idx);
+        UpdateTabHeader();
+    }
+
+    private void JumpToTab(int index)
+    {
+        if (index >= 0 && index < _tabControl.TabCount)
+            _tabControl.ActiveTabIndex = index;
+    }
+
     private void NavigateUp()
     {
-        var parent = Path.GetDirectoryName(_currentPath);
+        var parent = Path.GetDirectoryName(ActiveTab.Path);
         if (!string.IsNullOrEmpty(parent))
             NavigateTo(parent);
     }
 
     private void OpenSelected()
     {
-        var entry = _fileList.GetSelectedEntry();
+        var entry = ActiveFileList.GetSelectedEntry();
         if (entry == null) return;
 
         if (entry.IsDirectory)
@@ -173,9 +254,9 @@ public partial class CXFilesApp
 
     private void Refresh()
     {
-        _fileList.Refresh();
+        ActiveFileList.Refresh();
         _folderTree.RefreshNode(_folderTree.Control.SelectedNode);
-        UpdateFileListHeader();
+        ActiveTab.UpdateHeader();
         UpdateStatusLine();
     }
 
@@ -256,21 +337,11 @@ public partial class CXFilesApp
         }
     }
 
-    private void UpdateFileListHeader()
-    {
-        if (_fileListHeader == null) return;
-        _fileListHeader.ClearAll();
-        var folderName = Path.GetFileName(_currentPath);
-        if (string.IsNullOrEmpty(folderName))
-            folderName = _currentPath;
-        _fileListHeader.AddLeftText($"[grey70]{SharpConsoleUI.Parsing.MarkupParser.Escape(folderName)}[/]");
-    }
-
     private void UpdateStatusLine()
     {
         var checkedCount = GetCheckedCount();
         _statusLine.Update(
-            _fileList.Control.RowCount,
+            ActiveFileList.Control.RowCount,
             checkedCount,
             _detailVisible,
             _config.Config.ShowHiddenFiles,
@@ -282,25 +353,25 @@ public partial class CXFilesApp
 
     private int GetCheckedCount()
     {
-        var indices = _fileList.Control.GetSelectedIndices();
-        return indices.Count > 0 ? indices.Count : (_fileList.GetSelectedEntry() != null ? 1 : 0);
+        var indices = ActiveFileList.Control.GetSelectedIndices();
+        return indices.Count > 0 ? indices.Count : (ActiveFileList.GetSelectedEntry() != null ? 1 : 0);
     }
 
     private List<FileEntry> GetCheckedEntries()
     {
         var result = new List<FileEntry>();
-        var indices = _fileList.Control.GetSelectedIndices();
+        var indices = ActiveFileList.Control.GetSelectedIndices();
         if (indices.Count > 0)
         {
             foreach (var idx in indices)
             {
-                var entry = _fileList.GetEntryAt(idx);
+                var entry = ActiveFileList.GetEntryAt(idx);
                 if (entry != null) result.Add(entry);
             }
         }
         else
         {
-            var selected = _fileList.GetSelectedEntry();
+            var selected = ActiveFileList.GetSelectedEntry();
             if (selected != null) result.Add(selected);
         }
         return result;
@@ -311,7 +382,7 @@ public partial class CXFilesApp
         if (_toolbar == null) return;
         _toolbar.Clear();
 
-        if (_viewingTrash)
+        if (ActiveTab.ViewingTrash)
         {
             UpdateTrashToolbar();
             return;
@@ -350,7 +421,7 @@ public partial class CXFilesApp
 
     private void UpdateTrashToolbar()
     {
-        var hasSelection = _fileList.Control.SelectedRowIndex >= 0;
+        var hasSelection = ActiveFileList.Control.SelectedRowIndex >= 0;
 
         if (hasSelection)
         {
@@ -360,13 +431,13 @@ public partial class CXFilesApp
         }
         AddToolbarButton("⊗ Empty Trash", () => _ = EmptyTrashAsync());
         _toolbar.AddItem(new SeparatorControl());
-        AddToolbarButton("↑ Back [grey50]Bksp[/]", () => NavigateTo(_currentPath));
+        AddToolbarButton("↑ Back [grey50]Bksp[/]", () => NavigateTo(ActiveTab.Path));
     }
 
     private async Task RestoreFromTrashAsync()
     {
-        var idx = _fileList.Control.SelectedRowIndex;
-        if (_fileList.Control.DataSource is not UI.Components.TrashDataSource source) return;
+        var idx = ActiveFileList.Control.SelectedRowIndex;
+        if (ActiveFileList.Control.DataSource is not UI.Components.TrashDataSource source) return;
         var entry = source.GetEntry(idx);
         if (entry == null) return;
 
@@ -385,8 +456,8 @@ public partial class CXFilesApp
 
     private async Task DeleteFromTrashAsync()
     {
-        var idx = _fileList.Control.SelectedRowIndex;
-        if (_fileList.Control.DataSource is not UI.Components.TrashDataSource source) return;
+        var idx = ActiveFileList.Control.SelectedRowIndex;
+        if (ActiveFileList.Control.DataSource is not UI.Components.TrashDataSource source) return;
         var entry = source.GetEntry(idx);
         if (entry == null) return;
 

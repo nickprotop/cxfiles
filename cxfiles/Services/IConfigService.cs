@@ -8,6 +8,8 @@ public class CXFilesConfig
     public bool ConfirmDelete { get; set; } = true;
     public string SortColumn { get; set; } = "Name";
     public bool SortAscending { get; set; } = true;
+    public int MaxTabs { get; set; } = 5;
+    public bool SyncTreeToTab { get; set; } = true;
 }
 
 public interface IConfigService

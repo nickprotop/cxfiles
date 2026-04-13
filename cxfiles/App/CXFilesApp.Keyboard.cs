@@ -11,6 +11,7 @@ public partial class CXFilesApp
         var key = e.KeyInfo;
         bool ctrl = key.Modifiers.HasFlag(ConsoleModifiers.Control);
         bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
+        bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
 
         switch (key.Key)
         {
@@ -77,7 +78,8 @@ public partial class CXFilesApp
 
             case ConsoleKey.H when ctrl: // Ctrl+H toggle hidden
                 _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
-                _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+                foreach (var t in _tabs)
+                    t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
                 _config.Save();
                 e.Handled = true;
                 break;
@@ -92,6 +94,34 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.T when ctrl: // Ctrl+T new tab
+                NewTab();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.W when ctrl: // Ctrl+W close tab
+                CloseActiveTab();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.RightArrow when alt: // Alt+Right next tab
+                if (_tabControl.TabCount > 1)
+                    _tabControl.NextTab();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.LeftArrow when alt: // Alt+Left prev tab
+                if (_tabControl.TabCount > 1)
+                    _tabControl.PreviousTab();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.D1 when ctrl: JumpToTab(0); e.Handled = true; break;
+            case ConsoleKey.D2 when ctrl: JumpToTab(1); e.Handled = true; break;
+            case ConsoleKey.D3 when ctrl: JumpToTab(2); e.Handled = true; break;
+            case ConsoleKey.D4 when ctrl: JumpToTab(3); e.Handled = true; break;
+            case ConsoleKey.D5 when ctrl: JumpToTab(4); e.Handled = true; break;
+
             case ConsoleKey.Q when ctrl:
                 _ws.Shutdown();
                 e.Handled = true;
@@ -102,7 +132,8 @@ public partial class CXFilesApp
     private async Task ShowOptionsAsync()
     {
         var changed = await UI.Modals.OptionsModal.ShowAsync(_ws, _config, _mainWindow);
-        _fileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+        foreach (var t in _tabs)
+            t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
         Refresh();
     }
 
@@ -162,7 +193,7 @@ public partial class CXFilesApp
 
     private async Task RenameSelectedAsync()
     {
-        var entry = _fileList.GetSelectedEntry();
+        var entry = ActiveFileList.GetSelectedEntry();
         if (entry == null) return;
 
         var newName = await RenameModal.ShowAsync(_ws, entry.Name, _mainWindow);
@@ -222,7 +253,7 @@ public partial class CXFilesApp
                     op.Cts.Token.ThrowIfCancellationRequested();
                     var sourcePath = paths[i];
                     var name = Path.GetFileName(sourcePath);
-                    var destPath = Path.Combine(_currentPath, name);
+                    var destPath = Path.Combine(ActiveTab.Path, name);
                     op.CurrentFile = name;
                     _operations.ReportProgress(op, i, paths.Count);
 
@@ -249,7 +280,7 @@ public partial class CXFilesApp
 
     private async Task ShowPropertiesAsync()
     {
-        var entry = _fileList.GetSelectedEntry();
+        var entry = ActiveFileList.GetSelectedEntry();
         if (entry == null) return;
         await PropertiesModal.ShowAsync(_ws, entry, _mainWindow);
     }
@@ -261,7 +292,7 @@ public partial class CXFilesApp
         {
             try
             {
-                var path = Path.Combine(_currentPath, result.Name);
+                var path = Path.Combine(ActiveTab.Path, result.Name);
                 if (result.IsDirectory)
                     _fs.CreateDirectory(path);
                 else

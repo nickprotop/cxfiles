@@ -36,6 +36,7 @@ public class FileListPanel
             .WithFiltering()
             .WithFuzzyFilter()
             .WithColumnResize()
+            .WithColumnSeparator('│', Color.Grey27)
             .WithBorderStyle(BorderStyle.None)
             .WithBackgroundColor(Color.Transparent)
             .WithHeaderColors(Color.Grey70, new Color(25, 35, 55))

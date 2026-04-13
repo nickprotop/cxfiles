@@ -92,16 +92,43 @@ public partial class CXFilesApp
         _fileList.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
         _detailPanel.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
 
+        // Panel headers (cxpost pattern)
+        var panelHeaderBg = new Color(40, 50, 70, 160);
+
+        _treeHeader = Controls.StatusBar()
+            .AddLeftText("[grey70]Folders[/]")
+            .WithMargin(1, 0, 0, 0)
+            .Build();
+        _treeHeader.BackgroundColor = panelHeaderBg;
+        _treeHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        _fileListHeader = Controls.StatusBar()
+            .AddLeftText("[grey70]Files[/]")
+            .WithMargin(1, 0, 0, 0)
+            .Build();
+        _fileListHeader.BackgroundColor = panelHeaderBg;
+        _fileListHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
+
+        _detailHeader = Controls.StatusBar()
+            .AddLeftText("[grey70]Detail[/]")
+            .WithMargin(1, 0, 0, 0)
+            .Build();
+        _detailHeader.BackgroundColor = panelHeaderBg;
+        _detailHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
+
         // Main grid: tree | splitter | file list | splitter | detail
         _mainGrid = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
-            .Column(col => col.Width(25).Add(_folderTree.Control))
-            .Column(col => col.Flex(1).Add(_fileList.Control))
-            .Column(col => col.Width(30).Add(_detailPanel.Control))
+            .Column(col => col.Width(25).Add(_treeHeader).Add(_folderTree.Control))
+            .Column(col => col.Flex(1).Add(_fileListHeader).Add(_fileList.Control))
+            .Column(col => col.Width(30).Add(_detailHeader).Add(_detailPanel.Control))
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
             .Build();
+
+        foreach (var splitter in _mainGrid.Splitters)
+            splitter.ForegroundColor = Color.Grey27;
 
         // Apply initial visibility for detail panel
         if (!_detailVisible)

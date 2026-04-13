@@ -26,6 +26,9 @@ public partial class CXFilesApp
     private StatusLine _statusLine = null!;
     private ToolbarControl _toolbar = null!;
     private HorizontalGridControl? _mainGrid;
+    private StatusBarControl _treeHeader = null!;
+    private StatusBarControl _fileListHeader = null!;
+    private StatusBarControl _detailHeader = null!;
     private UI.ContextMenuBuilder _contextMenu = null!;
     private UI.OperationsPortal? _opsPortal;
     private LayoutNode? _opsPortalNode;
@@ -61,6 +64,7 @@ public partial class CXFilesApp
         _breadcrumb.Update(path);
         _fileList.Navigate(path);
         _folderTree.ExpandToPath(path);
+        UpdateFileListHeader();
         UpdateStatusLine();
         UpdateToolbar();
 
@@ -116,6 +120,7 @@ public partial class CXFilesApp
     {
         _fileList.Refresh();
         _folderTree.RefreshNode(_folderTree.Control.SelectedNode);
+        UpdateFileListHeader();
         UpdateStatusLine();
     }
 
@@ -145,6 +150,16 @@ public partial class CXFilesApp
             _opsPortalNode = null;
             _opsPortal = null;
         }
+    }
+
+    private void UpdateFileListHeader()
+    {
+        if (_fileListHeader == null) return;
+        _fileListHeader.ClearAll();
+        var folderName = Path.GetFileName(_currentPath);
+        if (string.IsNullOrEmpty(folderName))
+            folderName = _currentPath;
+        _fileListHeader.AddLeftText($"[grey70]{SharpConsoleUI.Parsing.MarkupParser.Escape(folderName)}[/]");
     }
 
     private void UpdateStatusLine()

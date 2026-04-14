@@ -41,12 +41,12 @@ public partial class CXFilesApp
         _tabControl.HorizontalAlignment = HorizontalAlignment.Stretch;
         _tabControl.VerticalAlignment = VerticalAlignment.Fill;
         _tabControl.BackgroundColor = Color.Transparent;
-        _tabControl.ShowTabHeader = false;
+        _tabControl.ShowTabHeader = true;
 
         // Create first tab
         var firstTab = CreateTab(_config.Config.DefaultPath);
         _tabs.Add(firstTab);
-        _tabControl.AddTab(firstTab.TabTitle, firstTab.Container, isClosable: true);
+        _tabControl.AddTab(firstTab.TabTitle, firstTab.Container, isClosable: false);
 
         // Tab events
         _tabControl.TabChanged += (_, e) => OnTabChanged(e);
@@ -57,7 +57,7 @@ public partial class CXFilesApp
                 _tabs[e.Index].Dispose();
                 _tabs.RemoveAt(e.Index);
                 _tabControl.RemoveTab(e.Index);
-                UpdateTabHeader();
+                UpdateCloseButtons();
                 UpdateToolbar();
             }
         };
@@ -177,6 +177,9 @@ public partial class CXFilesApp
             .AddControl(_statusLine.Control)
             .OnKeyPressed(OnGlobalKeyPressed)
             .Build();
+
+        // Compositor overlay: paints search hint/state messages over the file list area.
+        _mainWindow.PostBufferPaint += PaintSearchOverlay;
 
         // Route preview keys to context menu / operations / clipboard portals
         _mainWindow.PreviewKeyPressed += (_, e) =>

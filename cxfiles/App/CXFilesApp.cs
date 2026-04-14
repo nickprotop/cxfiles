@@ -86,10 +86,6 @@ public partial class CXFilesApp
         }
 
         _breadcrumb.Update(_trash.TrashPath);
-        tab.Header.ClearAll();
-        tab.Header.AddLeftText("[grey70]Trash[/]");
-        var trashCount = _trash.TrashCount;
-        tab.Header.AddRightText($"[grey50]{trashCount} items[/]");
         _tabControl.SetTabTitle(_tabControl.ActiveTabIndex, "Trash");
         var trashSource = new UI.Components.TrashDataSource();
         trashSource.SetEntries(_trash.ListTrash());
@@ -121,7 +117,6 @@ public partial class CXFilesApp
         tab.Path = path;
         _breadcrumb.Update(path);
         tab.FileList.Navigate(path);
-        tab.UpdateHeader();
         _tabControl.SetTabTitle(_tabControl.ActiveTabIndex, tab.TabTitle);
         if (_config.Config.SyncTreeToTab)
             _folderTree.ExpandToPath(path);
@@ -129,11 +124,22 @@ public partial class CXFilesApp
         UpdateStatusLine();
         UpdateToolbar();
 
-        // Restart file watcher for the new directory
+        // Restart file watcher for the new directory.
+        // The callback captures `tab` so the refresh targets the tab whose
+        // folder changed, not whatever tab happens to be active. Skip the
+        // refresh if the tab is currently in search mode — we don't want to
+        // wipe streaming/displayed search results.
         tab.FileWatcher?.Dispose();
+        var watchedTab = tab;
         try
         {
-            tab.FileWatcher = _fs.WatchDirectory(path, _ => _ws.EnqueueOnUIThread(Refresh));
+            tab.FileWatcher = _fs.WatchDirectory(path, _ => _ws.EnqueueOnUIThread(() =>
+            {
+                if (watchedTab.Search.Restore != null) return; // search active — leave it alone
+                watchedTab.FileList.Refresh();
+                if (_tabs.IndexOf(watchedTab) == _tabControl.ActiveTabIndex)
+                    UpdateStatusLine();
+            }));
         }
         catch { /* watcher may fail on some filesystems */ }
     }
@@ -141,17 +147,23 @@ public partial class CXFilesApp
     private TabState CreateTab(string path)
     {
         var tab = new TabState(_fs, _config.Config.ShowHiddenFiles, _config.Config.AutoSelectFirstItem, path);
+        WireSearchBar(tab);
         tab.FileList.FileActivated += entry =>
         {
+            // If a search is active on this tab, clear it before navigating.
+            if (tab.Search.Restore != null)
+                CancelAndRestore(tab);
             if (entry.IsDirectory)
                 NavigateTo(entry.FullPath);
         };
-        tab.FileList.SelectionChanged += entry =>
+        tab.FileList.SelectionChanged += info =>
         {
             if (_tabs.IndexOf(tab) == _tabControl.ActiveTabIndex)
             {
-                if (entry != null)
-                    _detailPanel.ShowEntry(entry);
+                if (info.Entry != null)
+                    _detailPanel.ShowEntry(info.Entry);
+                else if (info.IsLoading)
+                    _detailPanel.ShowLoading(info.LoadingName ?? "", info.LoadingPath ?? "");
                 else
                     _detailPanel.ShowFolder(tab.Path);
                 UpdateStatusLine();
@@ -170,14 +182,6 @@ public partial class CXFilesApp
             }
         };
         return tab;
-    }
-
-    private void UpdateTabHeader()
-    {
-        bool showStrip = _tabControl.TabCount >= 2;
-        _tabControl.ShowTabHeader = showStrip;
-        foreach (var t in _tabs)
-            t.Header.Visible = !showStrip;
     }
 
     private void OnTabChanged(TabChangedEventArgs e)
@@ -204,7 +208,7 @@ public partial class CXFilesApp
         _tabs.Add(tab);
         _tabControl.AddTab(tab.TabTitle, tab.Container, isClosable: true);
         _tabControl.ActiveTabIndex = _tabs.Count - 1;
-        UpdateTabHeader();
+        UpdateCloseButtons();
     }
 
     private void CloseActiveTab()
@@ -214,8 +218,21 @@ public partial class CXFilesApp
         _tabs[idx].Dispose();
         _tabs.RemoveAt(idx);
         _tabControl.RemoveTab(idx);
-        UpdateTabHeader();
+        UpdateCloseButtons();
         UpdateToolbar();
+    }
+
+    // The single remaining tab can't be closed — hide its × button.
+    // Called after every tab add/remove so the affordance reflects state.
+    private void UpdateCloseButtons()
+    {
+        bool closable = _tabControl.TabCount >= 2;
+        for (int i = 0; i < _tabControl.TabCount; i++)
+        {
+            var page = _tabControl.GetTab(i);
+            if (page != null) page.IsClosable = closable;
+        }
+        _tabControl.Invalidate();
     }
 
     private void JumpToTab(int index)
@@ -265,9 +282,13 @@ public partial class CXFilesApp
 
     private void Refresh()
     {
-        ActiveFileList.Refresh();
+        // If a search is active on the current tab, do NOT refresh the file list.
+        // Refresh() calls Navigate() which would swap the data source back to the
+        // browsing FileDataSource and wipe the search results out from under the
+        // user — typically triggered silently by a FileSystemWatcher event.
+        if (ActiveTab.Search.Restore == null)
+            ActiveFileList.Refresh();
         _folderTree.RefreshNode(_folderTree.Control.SelectedNode);
-        ActiveTab.UpdateHeader();
         UpdateStatusLine();
     }
 

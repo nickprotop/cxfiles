@@ -11,6 +11,19 @@ public record DirectorySizeProgress(
     bool IsFinal,
     IReadOnlyDictionary<string, long>? PerChildBytes = null);
 
+public sealed record SearchHit(
+    string Name,
+    string FullPath,
+    string RelativePath,
+    bool IsDirectory);
+
+public sealed class SearchProgress
+{
+    public int DirsScanned { get; init; }
+    public int MatchesFound { get; init; }
+    public bool LimitReached { get; init; }
+}
+
 public interface IFileSystemService
 {
     IReadOnlyList<DriveEntry> GetDrives();
@@ -18,6 +31,16 @@ public interface IFileSystemService
     FileEntry GetFileInfo(string path);
     bool DirectoryExists(string path);
     bool FileExists(string path);
+
+    IAsyncEnumerable<SearchHit> SearchAsync(
+        string root,
+        string query,
+        bool recurse,
+        bool showHidden,
+        IProgress<SearchProgress>? progress,
+        CancellationToken ct);
+
+    Task<FileEntry?> HydrateAsync(string fullPath, CancellationToken ct);
 
     Task CopyAsync(string source, string dest, bool overwrite,
         IProgress<(long bytes, long total)>? progress, CancellationToken ct);

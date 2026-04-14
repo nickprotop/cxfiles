@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using CXFiles.Models;
 
 namespace CXFiles.Services;
@@ -69,6 +70,180 @@ public class FileSystemService : IFileSystemService
 
     public bool DirectoryExists(string path) => Directory.Exists(path);
     public bool FileExists(string path) => File.Exists(path);
+
+    // Hard cap on entries inspected per search. Prevents a runaway walk over
+    // /home or / from chewing CPU forever; the user is expected to refine the
+    // query when the cap is reached.
+    private const int MaxSearchScan = 200_000;
+
+    // Well-known Linux virtual / pseudo filesystems and noisy mount points that
+    // should never be recursed into during a search. DriveInfo.GetDrives() may
+    // not always report all of them, so the explicit list is a safety net.
+    private static readonly string[] VirtualFsRoots =
+    {
+        "/proc", "/sys", "/dev", "/run", "/snap",
+        "/var/lib/docker", "/var/lib/containers", "/var/lib/lxcfs"
+    };
+
+    private static bool IsBlacklistedVirtualFs(string fullPath)
+    {
+        foreach (var v in VirtualFsRoots)
+        {
+            if (fullPath == v) return true;
+            if (fullPath.Length > v.Length &&
+                fullPath.StartsWith(v, StringComparison.Ordinal) &&
+                (fullPath[v.Length] == '/' || fullPath[v.Length] == Path.DirectorySeparatorChar))
+                return true;
+        }
+        return false;
+    }
+
+    public async IAsyncEnumerable<SearchHit> SearchAsync(
+        string root,
+        string query,
+        bool recurse,
+        bool showHidden,
+        IProgress<SearchProgress>? progress,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (!Directory.Exists(root))
+        {
+            progress?.Report(new SearchProgress());
+            yield break;
+        }
+
+        // Cross-filesystem boundaries to skip when recursing under `root`.
+        // Reuses the same helper the directory-size scanner uses.
+        var foreignMounts = recurse ? GetForeignMountsUnder(root) : Array.Empty<string>();
+
+        int scanned = 0;
+        int matches = 0;
+        bool limitHit = false;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        long lastReportMs = 0;
+        const long reportIntervalMs = 250;
+        const int reportEveryN = 500;
+
+        var stack = new Stack<string>();
+        stack.Push(root);
+
+        while (stack.Count > 0 && !limitHit)
+        {
+            ct.ThrowIfCancellationRequested();
+            var dir = stack.Pop();
+
+            IEnumerable<FileSystemInfo>? entries = null;
+            try
+            {
+                entries = new DirectoryInfo(dir).EnumerateFileSystemInfos("*", new EnumerationOptions
+                {
+                    IgnoreInaccessible = true,
+                    RecurseSubdirectories = false
+                });
+            }
+            catch (DirectoryNotFoundException) { }
+            catch (UnauthorizedAccessException) { }
+            catch (IOException) { }
+            if (entries == null) continue;
+
+            IEnumerator<FileSystemInfo>? it = null;
+            try { it = entries.GetEnumerator(); }
+            catch (UnauthorizedAccessException) { continue; }
+            catch (IOException) { continue; }
+            if (it == null) continue;
+
+            using (it)
+            {
+                while (true)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    bool moved;
+                    FileSystemInfo? info = null;
+                    try
+                    {
+                        moved = it.MoveNext();
+                        if (moved) info = it.Current;
+                    }
+                    catch (UnauthorizedAccessException) { break; }
+                    catch (IOException) { break; }
+
+                    if (!moved || info == null) break;
+
+                    scanned++;
+                    if (scanned >= MaxSearchScan)
+                    {
+                        limitHit = true;
+                        break;
+                    }
+
+                    bool isDir = (info.Attributes & FileAttributes.Directory) != 0;
+                    bool isReparse = (info.Attributes & FileAttributes.ReparsePoint) != 0;
+                    bool hidden = IsHiddenInfo(info);
+
+                    // Match check (skip hidden if the user asked).
+                    if (!(hidden && !showHidden) &&
+                        !string.IsNullOrEmpty(query) &&
+                        info.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matches++;
+                        yield return new SearchHit(
+                            info.Name,
+                            info.FullName,
+                            Path.GetRelativePath(root, info.FullName),
+                            isDir);
+                    }
+
+                    // Decide whether to descend.
+                    if (recurse && isDir)
+                    {
+                        if (isReparse) continue;                            // never follow symlinks (loops)
+                        if (hidden && !showHidden) continue;                // skip hidden subtrees
+                        var sub = info.FullName;
+                        if (IsBlacklistedVirtualFs(sub)) continue;          // /proc, /sys, /dev, …
+                        if (IsUnderForeignMount(sub, foreignMounts)) continue; // cross-filesystem boundary
+                        stack.Push(sub);
+                    }
+
+                    var nowMs = sw.ElapsedMilliseconds;
+                    if (nowMs - lastReportMs >= reportIntervalMs || scanned % reportEveryN == 0)
+                    {
+                        lastReportMs = nowMs;
+                        progress?.Report(new SearchProgress
+                        {
+                            DirsScanned = scanned,
+                            MatchesFound = matches,
+                            LimitReached = limitHit
+                        });
+                        await Task.Yield();
+                    }
+                }
+            }
+        }
+
+        progress?.Report(new SearchProgress
+        {
+            DirsScanned = scanned,
+            MatchesFound = matches,
+            LimitReached = limitHit
+        });
+    }
+
+    public Task<FileEntry?> HydrateAsync(string fullPath, CancellationToken ct)
+    {
+        return Task.Run<FileEntry?>(() =>
+        {
+            try { return GetFileInfo(fullPath); }
+            catch (FileNotFoundException) { return null; }
+            catch (DirectoryNotFoundException) { return null; }
+            catch (UnauthorizedAccessException) { return null; }
+            catch (IOException) { return null; }
+        }, ct);
+    }
+
+    private static bool IsHiddenInfo(FileSystemInfo info) =>
+        info.Name.StartsWith('.') ||
+        (info.Attributes & FileAttributes.Hidden) != 0;
 
     public async Task CopyAsync(string source, string dest, bool overwrite,
         IProgress<(long bytes, long total)>? progress, CancellationToken ct)

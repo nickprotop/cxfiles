@@ -6,6 +6,12 @@ using CXFiles.Models;
 
 namespace CXFiles.UI.Components;
 
+public sealed record FileDataSourceState(
+    IReadOnlyList<FileEntry> AllEntries,
+    int SortColumn,
+    SortDirection SortDirection,
+    string? FilterText);
+
 public class FileDataSource : ITableDataSource
 {
     private List<FileEntry> _allEntries = new();
@@ -13,6 +19,18 @@ public class FileDataSource : ITableDataSource
     private int _sortColumn = 0;
     private SortDirection _sortDirection = SortDirection.Ascending;
     private string? _filterText;
+
+    public FileDataSourceState CaptureState() =>
+        new(_allEntries.ToList(), _sortColumn, _sortDirection, _filterText);
+
+    public void RestoreState(FileDataSourceState s)
+    {
+        _allEntries = s.AllEntries.ToList();
+        _sortColumn = s.SortColumn;
+        _sortDirection = s.SortDirection;
+        _filterText = s.FilterText;
+        ApplySortAndFilter();
+    }
 
     private static readonly string[] ColumnHeaders = { "Name", "Size", "Modified", "Type" };
 

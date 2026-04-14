@@ -16,6 +16,14 @@ public class StatusLine
     public event Action? ClipboardClicked;
     public event Action? RefreshClicked;
 
+    // Cached last-Update args for incremental re-render when search progress changes.
+    private Action? _lastRender;
+
+    // Search progress state, displayed when active.
+    private bool _searchActive;
+    private int _searchScanned;
+    private int _searchMatches;
+
     public StatusLine()
     {
         _bar = new StatusBarControl(stickyBottom: true)
@@ -28,12 +36,43 @@ public class StatusLine
         };
     }
 
+    public void SetSearchProgress(int scanned, int matches)
+    {
+        _searchActive = true;
+        _searchScanned = scanned;
+        _searchMatches = matches;
+        _lastRender?.Invoke();
+    }
+
+    public void ClearSearchProgress()
+    {
+        if (!_searchActive) return;
+        _searchActive = false;
+        _searchScanned = 0;
+        _searchMatches = 0;
+        _lastRender?.Invoke();
+    }
+
     public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
         int activeOps = 0, int totalOps = 0, int clipboardCount = 0, string? clipboardAction = null)
+    {
+        _lastRender = () => Render(itemCount, selectedCount, detailVisible, showHidden,
+            activeOps, totalOps, clipboardCount, clipboardAction);
+        _lastRender();
+    }
+
+    private void Render(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
+        int activeOps, int totalOps, int clipboardCount, string? clipboardAction)
     {
         _bar.BatchUpdate(() =>
         {
             _bar.ClearAll();
+
+            if (_searchActive)
+            {
+                _bar.AddLeftText($"[cyan]🔍 scanned {_searchScanned} · {_searchMatches} matches[/]");
+                _bar.AddLeftSeparator();
+            }
 
             // Left: item count + selection
             _bar.AddLeftText($"[dim]{itemCount} items[/]");

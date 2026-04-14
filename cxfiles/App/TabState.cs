@@ -7,29 +7,35 @@ using CXFiles.Services;
 
 namespace CXFiles.App;
 
+public sealed class SearchState
+{
+    public string Query { get; set; } = "";
+    public bool Recurse { get; set; } = true;
+    public CancellationTokenSource? Cts { get; set; }
+    public FileListSnapshot? Restore { get; set; }
+}
+
 public class TabState
 {
     public string Path { get; set; }
     public bool ViewingTrash { get; set; }
-    public StatusBarControl Header { get; }
+    public SearchBar SearchBar { get; }
     public FileListPanel FileList { get; }
     public ScrollablePanelControl Container { get; }
     public IDisposable? FileWatcher { get; set; }
-
-    private static readonly Color HeaderBg = new(40, 50, 70, 160);
+    public SearchState Search { get; } = new();
 
     public TabState(IFileSystemService fs, bool showHidden, bool autoSelectFirstItem, string initialPath)
     {
         Path = initialPath;
 
-        Header = Controls.StatusBar()
-            .AddLeftText($"[grey70]{System.IO.Path.GetFileName(initialPath)}[/]")
-            .WithMargin(1, 0, 0, 0)
-            .Build();
-        Header.BackgroundColor = HeaderBg;
-        Header.HorizontalAlignment = HorizontalAlignment.Stretch;
+        SearchBar = new SearchBar();
 
         FileList = new FileListPanel(fs, showHidden, autoSelectFirstItem);
+
+        var rule = Controls.RuleBuilder()
+            .WithColor(Color.Grey27)
+            .Build();
 
         Container = Controls.ScrollablePanel()
             .WithBackgroundColor(Color.Transparent)
@@ -37,7 +43,8 @@ public class TabState
         Container.ShowScrollbar = false;
         Container.VerticalAlignment = VerticalAlignment.Fill;
         Container.HorizontalAlignment = HorizontalAlignment.Stretch;
-        Container.AddControl(Header);
+        Container.AddControl(SearchBar.Control);
+        Container.AddControl(rule);
         Container.AddControl(FileList.Control);
     }
 
@@ -51,15 +58,12 @@ public class TabState
         }
     }
 
-    public void UpdateHeader()
-    {
-        Header.ClearAll();
-        Header.AddLeftText($"[grey70]{SharpConsoleUI.Parsing.MarkupParser.Escape(TabTitle)}[/]");
-    }
-
     public void Dispose()
     {
         FileWatcher?.Dispose();
         FileWatcher = null;
+        Search.Cts?.Cancel();
+        Search.Cts?.Dispose();
+        Search.Cts = null;
     }
 }

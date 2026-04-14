@@ -12,12 +12,14 @@ public class FileListPanel
     private readonly IFileSystemService _fs;
     private readonly TableControl _table;
     private readonly FileDataSource _dataSource;
+    private SearchResultsDataSource? _searchDataSource;
     private string _currentPath = "";
     private bool _showHidden;
     private bool _autoSelectFirstItem;
 
     public TableControl Control => _table;
     public string CurrentPath => _currentPath;
+    public bool InSearchMode => _table.DataSource is SearchResultsDataSource;
 
     public bool AutoSelectFirstItem
     {
@@ -26,7 +28,7 @@ public class FileListPanel
     }
 
     public event Action<FileEntry>? FileActivated;
-    public event Action<FileEntry?>? SelectionChanged;
+    public event Action<SelectionInfo>? SelectionChanged;
 
     public FileListPanel(IFileSystemService fs, bool showHidden = false, bool autoSelectFirstItem = false)
     {
@@ -57,15 +59,44 @@ public class FileListPanel
 
         _table.RowActivated += (_, rowIndex) =>
         {
-            var entry = _dataSource.GetEntry(rowIndex);
+            var entry = ResolveEntry(rowIndex, sync: true);
             if (entry != null)
                 FileActivated?.Invoke(entry);
         };
 
         _table.SelectedRowChanged += (_, idx) =>
         {
-            SelectionChanged?.Invoke(_dataSource.GetEntry(idx));
+            var tag = _table.DataSource?.GetRowTag(idx);
+            SelectionInfo info = tag switch
+            {
+                FileEntry fe              => SelectionInfo.Resolved(fe),
+                SearchRow { Full: { } f } => SelectionInfo.Resolved(f),
+                SearchRow row             => SelectionInfo.Loading(row.Hit),
+                _                         => SelectionInfo.Empty
+            };
+            SelectionChanged?.Invoke(info);
         };
+    }
+
+    private FileEntry? ResolveEntry(int rowIndex, bool sync)
+    {
+        var tag = _table.DataSource?.GetRowTag(rowIndex);
+        return tag switch
+        {
+            FileEntry fe              => fe,
+            SearchRow { Full: { } f } => f,
+            SearchRow row             => sync ? SafeGetFileInfo(row.Hit.FullPath) : null,
+            _                         => null
+        };
+    }
+
+    private FileEntry? SafeGetFileInfo(string fullPath)
+    {
+        try { return _fs.GetFileInfo(fullPath); }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+        catch (IOException) { return null; }
     }
 
     public void Navigate(string path)
@@ -90,9 +121,9 @@ public class FileListPanel
         else
         {
             _table.SelectedRowIndex = -1;
-            // Fire a null SelectionChanged so listeners (detail panel, toolbar)
+            // Fire an empty SelectionChanged so listeners (detail panel, toolbar)
             // reset to the folder-centric view even if the table didn't change row.
-            SelectionChanged?.Invoke(null);
+            SelectionChanged?.Invoke(SelectionInfo.Empty);
         }
     }
 
@@ -106,10 +137,60 @@ public class FileListPanel
     public FileEntry? GetSelectedEntry()
     {
         var idx = _table.SelectedRowIndex;
-        return _dataSource.GetEntry(idx);
+        return ResolveEntry(idx, sync: true);
     }
 
-    public FileEntry? GetEntryAt(int index) => _dataSource.GetEntry(index);
+    public FileEntry? GetEntryAt(int index) => ResolveEntry(index, sync: true);
 
     public void Refresh() => Navigate(_currentPath);
+
+    // --- Search-mode hooks ---
+
+    public void EnterSearchMode(SearchResultsDataSource results)
+    {
+        if (_searchDataSource != null && _searchDataSource != results)
+            _searchDataSource.RowHydrated -= OnRowHydrated;
+
+        _searchDataSource = results;
+        results.RowHydrated += OnRowHydrated;
+
+        if (_table.DataSource != results)
+            _table.DataSource = results;
+    }
+
+    public void ExitSearchMode()
+    {
+        if (_searchDataSource != null)
+        {
+            _searchDataSource.RowHydrated -= OnRowHydrated;
+            _searchDataSource = null;
+        }
+        if (_table.DataSource != _dataSource)
+            _table.DataSource = _dataSource;
+    }
+
+    private void OnRowHydrated(SearchRow row)
+    {
+        if (_searchDataSource == null) return;
+        int idx = _searchDataSource.IndexOfRow(row);
+        if (idx >= 0 && idx == _table.SelectedRowIndex && row.Full != null)
+            SelectionChanged?.Invoke(SelectionInfo.Resolved(row.Full));
+    }
+
+    public FileListSnapshot CaptureSnapshot() => new(
+        _dataSource.CaptureState(),
+        _table.SelectedRowIndex,
+        0);
+
+    public void RestoreSnapshot(FileListSnapshot snapshot)
+    {
+        _dataSource.RestoreState(snapshot.DataState);
+        if (snapshot.SelectedIndex >= 0 && snapshot.SelectedIndex < _table.RowCount)
+            _table.SelectedRowIndex = snapshot.SelectedIndex;
+    }
 }
+
+public sealed record FileListSnapshot(
+    FileDataSourceState DataState,
+    int SelectedIndex,
+    int ScrollOffset);

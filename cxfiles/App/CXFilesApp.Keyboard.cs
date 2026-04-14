@@ -13,6 +13,31 @@ public partial class CXFilesApp
         bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
         bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
 
+        // When the search bar has focus, defer text-editing keys to it.
+        // Without this guard, e.g. Backspace would call NavigateUp() and
+        // mutate tab.Path mid-search — the next walker would start from
+        // the parent folder instead of the original search root.
+        if (ActiveTab.SearchBar.HasFocus)
+        {
+            switch (key.Key)
+            {
+                case ConsoleKey.Backspace:
+                case ConsoleKey.Delete:
+                case ConsoleKey.LeftArrow:
+                case ConsoleKey.RightArrow:
+                case ConsoleKey.Home:
+                case ConsoleKey.End:
+                    return; // prompt owns these
+                case ConsoleKey.C when ctrl:
+                case ConsoleKey.X when ctrl:
+                case ConsoleKey.V when ctrl:
+                case ConsoleKey.A when ctrl:
+                    return; // prompt owns clipboard/select-all
+            }
+            // Escape and Ctrl+F still need to flow through to our handlers below
+            // (Escape cancels the search; Ctrl+F is harmless re-focus).
+        }
+
         switch (key.Key)
         {
             case ConsoleKey.Backspace when !ctrl:
@@ -73,6 +98,16 @@ public partial class CXFilesApp
 
             case ConsoleKey.V when ctrl: // Ctrl+V paste
                 _ = PasteAsync();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.F when ctrl: // Ctrl+F focus search bar
+                ActiveTab.SearchBar.Focus();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.Escape when ActiveTab.Search.Restore != null:
+                CancelAndRestore(ActiveTab);
                 e.Handled = true;
                 break;
 

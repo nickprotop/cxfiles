@@ -65,6 +65,22 @@ public class DetailPanel
         _info.SetContent(lines);
     }
 
+    public void ShowLoading(string name, string relativePath)
+    {
+        var lines = new List<string>
+        {
+            $"[bold]◦ {SharpConsoleUI.Parsing.MarkupParser.Escape(name)}[/]",
+            "",
+            "[dim]Type:[/]     …",
+            $"[dim]Path:[/]     {SharpConsoleUI.Parsing.MarkupParser.Escape(relativePath)}",
+            "[dim]Size:[/]     …",
+            "[dim]Modified:[/] …",
+            "",
+            "[dim]Loading metadata…[/]",
+        };
+        _info.SetContent(lines);
+    }
+
     public void ShowEntry(FileEntry? entry)
     {
         if (entry == null)

@@ -18,7 +18,7 @@ public class TabState
 
     private static readonly Color HeaderBg = new(40, 50, 70, 160);
 
-    public TabState(IFileSystemService fs, bool showHidden, string initialPath)
+    public TabState(IFileSystemService fs, bool showHidden, bool autoSelectFirstItem, string initialPath)
     {
         Path = initialPath;
 
@@ -29,7 +29,7 @@ public class TabState
         Header.BackgroundColor = HeaderBg;
         Header.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        FileList = new FileListPanel(fs, showHidden);
+        FileList = new FileListPanel(fs, showHidden, autoSelectFirstItem);
 
         Container = Controls.ScrollablePanel()
             .WithBackgroundColor(Color.Transparent)

@@ -140,7 +140,7 @@ public partial class CXFilesApp
 
     private TabState CreateTab(string path)
     {
-        var tab = new TabState(_fs, _config.Config.ShowHiddenFiles, path);
+        var tab = new TabState(_fs, _config.Config.ShowHiddenFiles, _config.Config.AutoSelectFirstItem, path);
         tab.FileList.FileActivated += entry =>
         {
             if (entry.IsDirectory)
@@ -150,7 +150,10 @@ public partial class CXFilesApp
         {
             if (_tabs.IndexOf(tab) == _tabControl.ActiveTabIndex)
             {
-                _detailPanel.ShowEntry(entry);
+                if (entry != null)
+                    _detailPanel.ShowEntry(entry);
+                else
+                    _detailPanel.ShowFolder(tab.Path);
                 UpdateStatusLine();
                 UpdateToolbar();
             }
@@ -183,7 +186,11 @@ public partial class CXFilesApp
         _breadcrumb.Update(tab.Path);
         if (_config.Config.SyncTreeToTab && !tab.ViewingTrash)
             _folderTree.ExpandToPath(tab.Path);
-        _detailPanel.ShowEntry(tab.FileList.GetSelectedEntry());
+        var sel = tab.FileList.GetSelectedEntry();
+        if (sel != null)
+            _detailPanel.ShowEntry(sel);
+        else
+            _detailPanel.ShowFolder(tab.Path);
         UpdateStatusLine();
         UpdateToolbar();
     }
@@ -417,6 +424,10 @@ public partial class CXFilesApp
             _toolbar.AddItem(new SeparatorControl());
             AddToolbarButton("⊟ Copy" + (multiSelect ? $" ({checkedCount})" : "") + " [grey50]^C[/]", CopySelected);
             AddToolbarButton("⊠ Cut" + (multiSelect ? $" ({checkedCount})" : "") + " [grey50]^X[/]", CutSelected);
+        }
+        else
+        {
+            AddToolbarButton("⊞ Folder Props [grey50]F4[/]", () => _ = ShowPropertiesAsync());
         }
         if (_clipboard.HasContent)
         {

@@ -10,6 +10,7 @@ public class CXFilesConfig
     public bool SortAscending { get; set; } = true;
     public int MaxTabs { get; set; } = 5;
     public bool SyncTreeToTab { get; set; } = true;
+    public bool AutoSelectFirstItem { get; set; } = false;
 }
 
 public interface IConfigService

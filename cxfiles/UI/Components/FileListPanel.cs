@@ -14,17 +14,25 @@ public class FileListPanel
     private readonly FileDataSource _dataSource;
     private string _currentPath = "";
     private bool _showHidden;
+    private bool _autoSelectFirstItem;
 
     public TableControl Control => _table;
     public string CurrentPath => _currentPath;
 
-    public event Action<FileEntry>? FileActivated;
-    public event Action<FileEntry>? SelectionChanged;
+    public bool AutoSelectFirstItem
+    {
+        get => _autoSelectFirstItem;
+        set => _autoSelectFirstItem = value;
+    }
 
-    public FileListPanel(IFileSystemService fs, bool showHidden = false)
+    public event Action<FileEntry>? FileActivated;
+    public event Action<FileEntry?>? SelectionChanged;
+
+    public FileListPanel(IFileSystemService fs, bool showHidden = false, bool autoSelectFirstItem = false)
     {
         _fs = fs;
         _showHidden = showHidden;
+        _autoSelectFirstItem = autoSelectFirstItem;
         _dataSource = new FileDataSource();
 
         _table = Controls.Table()
@@ -45,6 +53,7 @@ public class FileListPanel
         _table.TruncationFade = true;
         _table.VerticalAlignment = VerticalAlignment.Fill;
         _table.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _table.ClearSelectionOnEmptyClick = true;
 
         _table.RowActivated += (_, rowIndex) =>
         {
@@ -55,9 +64,7 @@ public class FileListPanel
 
         _table.SelectedRowChanged += (_, idx) =>
         {
-            var entry = _dataSource.GetEntry(idx);
-            if (entry != null)
-                SelectionChanged?.Invoke(entry);
+            SelectionChanged?.Invoke(_dataSource.GetEntry(idx));
         };
     }
 
@@ -73,6 +80,20 @@ public class FileListPanel
             .Where(e => _showHidden || !e.IsHidden);
 
         _dataSource.SetEntries(entries);
+
+        if (_autoSelectFirstItem)
+        {
+            // SetEntries may have already landed on row 0; make it explicit.
+            if (_table.RowCount > 0)
+                _table.SelectedRowIndex = 0;
+        }
+        else
+        {
+            _table.SelectedRowIndex = -1;
+            // Fire a null SelectionChanged so listeners (detail panel, toolbar)
+            // reset to the folder-centric view even if the table didn't change row.
+            SelectionChanged?.Invoke(null);
+        }
     }
 
     public void SetShowHidden(bool show)

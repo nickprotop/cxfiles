@@ -281,8 +281,13 @@ public partial class CXFilesApp
     private async Task ShowPropertiesAsync()
     {
         var entry = ActiveFileList.GetSelectedEntry();
-        if (entry == null) return;
-        await PropertiesModal.ShowAsync(_ws, entry, _mainWindow);
+        if (entry == null)
+        {
+            // Null selection → show properties for the current folder.
+            try { entry = _fs.GetFileInfo(ActiveTab.Path); }
+            catch { return; }
+        }
+        await PropertiesModal.ShowAsync(_ws, _fs, entry, _mainWindow);
     }
 
     private async Task NewItemAsync(bool isDirectory)

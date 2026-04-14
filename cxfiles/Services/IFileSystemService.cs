@@ -4,6 +4,13 @@ namespace CXFiles.Services;
 
 public record FileSystemChangeEvent(string Path, WatcherChangeTypes ChangeType);
 
+public record DirectorySizeProgress(
+    long BytesSoFar,
+    long FilesScanned,
+    long InaccessibleEntries,
+    bool IsFinal,
+    IReadOnlyDictionary<string, long>? PerChildBytes = null);
+
 public interface IFileSystemService
 {
     IReadOnlyList<DriveEntry> GetDrives();
@@ -22,6 +29,9 @@ public interface IFileSystemService
 
     string GetFilePreview(string path, int maxLines);
     long GetDirectorySize(string path, CancellationToken ct);
+    void EnumerateDirectorySize(string path,
+        IProgress<DirectorySizeProgress> progress,
+        CancellationToken ct);
 
     IDisposable WatchDirectory(string path, Action<FileSystemChangeEvent> onChange);
 }

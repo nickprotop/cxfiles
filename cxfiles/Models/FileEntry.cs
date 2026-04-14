@@ -7,6 +7,7 @@ public record FileEntry(
     long Size,
     DateTime Modified,
     DateTime Created,
+    DateTime Accessed,
     bool IsHidden,
     bool IsSymlink,
     bool IsReadOnly,
@@ -33,7 +34,7 @@ public record FileEntry(
             _ => "◦"
         };
 
-    private static string FormatSize(long bytes) => bytes switch
+    internal static string FormatSize(long bytes) => bytes switch
     {
         < 1024 => $"{bytes}B",
         < 1024 * 1024 => $"{bytes / 1024.0:F1}K",

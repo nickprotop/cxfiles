@@ -32,11 +32,44 @@ public class DetailPanel
         _panel.AddControl(_info);
     }
 
+    public void ShowFolder(string path)
+    {
+        var lines = new List<string>();
+        DirectoryInfo? dir = null;
+        try { dir = new DirectoryInfo(path); } catch { }
+
+        if (dir == null || !dir.Exists)
+        {
+            _info.SetContent(new List<string> { "[dim]No folder selected[/]" });
+            return;
+        }
+
+        lines.Add($"[bold]▸ {SharpConsoleUI.Parsing.MarkupParser.Escape(dir.Name.Length == 0 ? dir.FullName : dir.Name)}[/]");
+        lines.Add("");
+        lines.Add($"[dim]Type:[/]     Folder");
+        lines.Add($"[dim]Path:[/]     {SharpConsoleUI.Parsing.MarkupParser.Escape(dir.FullName)}");
+
+        int folderCount = 0, fileCount = 0;
+        try
+        {
+            foreach (var _ in dir.EnumerateDirectories()) folderCount++;
+            foreach (var _ in dir.EnumerateFiles()) fileCount++;
+        }
+        catch { }
+
+        lines.Add($"[dim]Contains:[/] {folderCount} folder{(folderCount == 1 ? "" : "s")}, {fileCount} file{(fileCount == 1 ? "" : "s")}");
+
+        try { lines.Add($"[dim]Modified:[/] {dir.LastWriteTime:yyyy-MM-dd HH:mm:ss}"); } catch { }
+        try { lines.Add($"[dim]Created:[/]  {dir.CreationTime:yyyy-MM-dd HH:mm:ss}"); } catch { }
+
+        _info.SetContent(lines);
+    }
+
     public void ShowEntry(FileEntry? entry)
     {
         if (entry == null)
         {
-            _info.SetContent(new List<string> { "[dim]Select a file to see details[/]" });
+            _info.SetContent(new List<string> { "[dim]Nothing selected[/]" });
             return;
         }
 

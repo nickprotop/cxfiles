@@ -103,6 +103,16 @@ public class OptionsModal : ModalBase<bool>
         };
         panel.AddControl(syncTreeCheck);
 
+        var autoSelectCheck = Controls.Checkbox("Auto-select first item on folder enter")
+            .Checked(_config.Config.AutoSelectFirstItem)
+            .Build();
+        autoSelectCheck.CheckedChanged += (_, _) =>
+        {
+            _config.Config.AutoSelectFirstItem = autoSelectCheck.Checked;
+            _config.Save();
+        };
+        panel.AddControl(autoSelectCheck);
+
         panel.AddControl(Controls.Markup()
             .AddLine($"[dim]Maximum tabs: {_config.Config.MaxTabs} (edit config file to change)[/]")
             .Build());

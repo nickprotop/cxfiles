@@ -58,6 +58,7 @@ public partial class CXFilesApp
                 _tabs.RemoveAt(e.Index);
                 _tabControl.RemoveTab(e.Index);
                 UpdateTabHeader();
+                UpdateToolbar();
             }
         };
 

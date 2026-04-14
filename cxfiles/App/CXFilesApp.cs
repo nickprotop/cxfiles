@@ -208,6 +208,7 @@ public partial class CXFilesApp
         _tabs.RemoveAt(idx);
         _tabControl.RemoveTab(idx);
         UpdateTabHeader();
+        UpdateToolbar();
     }
 
     private void JumpToTab(int index)
@@ -397,6 +398,8 @@ public partial class CXFilesApp
 
         AddToolbarButton("◈ Open [grey50]Enter[/]", OpenSelected);
         AddToolbarButton("↑ Up [grey50]Bksp[/]", NavigateUp);
+        if (_tabs.Count < _config.Config.MaxTabs)
+            AddToolbarButton("❒ New Tab [grey50]^T[/]", NewTab);
         _toolbar.AddItem(new SeparatorControl());
         AddToolbarButton("⊕ New [grey50]^N[/]", () => _ = NewItemAsync(false));
         if (hasSelection)
@@ -435,6 +438,8 @@ public partial class CXFilesApp
         AddToolbarButton("⊗ Empty Trash", () => _ = EmptyTrashAsync());
         _toolbar.AddItem(new SeparatorControl());
         AddToolbarButton("↑ Back [grey50]Bksp[/]", () => NavigateTo(ActiveTab.Path));
+        if (_tabs.Count < _config.Config.MaxTabs)
+            AddToolbarButton("❒ New Tab [grey50]^T[/]", NewTab);
     }
 
     private async Task RestoreFromTrashAsync()

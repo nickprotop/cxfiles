@@ -171,7 +171,10 @@ public partial class CXFilesApp
 
     private void UpdateTabHeader()
     {
-        _tabControl.ShowTabHeader = _tabControl.TabCount >= 2;
+        bool showStrip = _tabControl.TabCount >= 2;
+        _tabControl.ShowTabHeader = showStrip;
+        foreach (var t in _tabs)
+            t.Header.Visible = !showStrip;
     }
 
     private void OnTabChanged(TabChangedEventArgs e)

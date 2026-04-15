@@ -108,6 +108,13 @@ public class HelpModal : ModalBase<bool>
             ("./prefix",    "Force non-recursive (current dir only)"),
             ("[[R]] button", "Toggle recurse on/off"),
         }),
+        ("Open", new[]
+        {
+            ("Enter",       "Open file / navigate folder"),
+            ("Ctrl+E",      "Open in editor"),
+            ("Ctrl+`",      "Toggle terminal"),
+            ("F6",          "Focus file list / terminal"),
+        }),
         ("View", new[]
         {
             ("Ctrl+H",      "Toggle hidden files"),

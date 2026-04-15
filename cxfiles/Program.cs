@@ -12,6 +12,8 @@ class Program
 {
     static int Main(string[] args)
     {
+        SharpConsoleUI.PtyShim.RunIfShim(args);
+
         try
         {
             if (Console.WindowWidth <= 0 || Console.WindowHeight <= 0)
@@ -47,6 +49,7 @@ class Program
         else
             services.AddSingleton<ITrashService, XdgTrashService>();
         services.AddSingleton<SudoService>();
+        services.AddSingleton<LauncherService>();
 
         var provider = services.BuildServiceProvider();
 
@@ -57,7 +60,8 @@ class Program
             provider.GetRequiredService<IConfigService>(),
             provider.GetRequiredService<OperationManager>(),
             provider.GetRequiredService<ITrashService>(),
-            provider.GetRequiredService<SudoService>());
+            provider.GetRequiredService<SudoService>(),
+            provider.GetRequiredService<LauncherService>());
 
         app.Run();
 

@@ -64,7 +64,15 @@ public partial class CXFilesApp
 
         // Context menu
         _contextMenu = new UI.ContextMenuBuilder();
-        _contextMenu.OnOpen += entry => { if (entry.IsDirectory) NavigateTo(entry.FullPath); };
+        _contextMenu.OnOpen += entry =>
+        {
+            if (entry.IsDirectory)
+                NavigateTo(entry.FullPath);
+            else
+                _launcher.OpenWithDefault(entry.FullPath);
+        };
+        _contextMenu.OnOpenInEditor += entry => _launcher.OpenWithEditor(entry.FullPath);
+        _contextMenu.OnOpenTerminal += dir => OpenTerminalAt(dir);
         _contextMenu.OnRename += () => _ = RenameSelectedAsync();
         _contextMenu.OnDelete += () => _ = DeleteSelectedAsync();
         _contextMenu.OnProperties += () => _ = ShowPropertiesAsync();
@@ -76,7 +84,6 @@ public partial class CXFilesApp
 
         // Detail panel (right panel)
         _detailPanel = new DetailPanel(_fs);
-        _detailPanel.Control.Visible = _detailVisible;
 
         // Status line
         _statusLine = new StatusLine();
@@ -109,7 +116,6 @@ public partial class CXFilesApp
 
         // Set controls to stretch horizontally
         _folderTree.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
-        _detailPanel.Control.HorizontalAlignment = HorizontalAlignment.Stretch;
 
         // Panel headers (cxpost pattern)
         var panelHeaderBg = new Color(40, 50, 70, 160);
@@ -121,12 +127,15 @@ public partial class CXFilesApp
         _treeHeader.BackgroundColor = panelHeaderBg;
         _treeHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
 
-        _detailHeader = Controls.StatusBar()
-            .AddLeftText("[grey70]Detail[/]")
-            .WithMargin(1, 0, 0, 0)
+        // Right panel: tabbed Preview + Terminal
+        _rightPanelTabs = new TabControlBuilder()
+            .WithHeaderStyle(TabHeaderStyle.Classic)
+            .Fill()
             .Build();
-        _detailHeader.BackgroundColor = panelHeaderBg;
-        _detailHeader.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _rightPanelTabs.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _rightPanelTabs.VerticalAlignment = VerticalAlignment.Fill;
+        _rightPanelTabs.BackgroundColor = Color.Transparent;
+        _rightPanelTabs.AddTab("Preview", _detailPanel.Control, isClosable: false);
 
         // Main grid: tree | splitter | file list | splitter | detail
         _mainGrid = Controls.HorizontalGrid()
@@ -134,7 +143,7 @@ public partial class CXFilesApp
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .Column(col => col.Width(25).Add(_treeHeader).Add(_folderTree.Control))
             .Column(col => col.Flex(1).Add(_tabControl))
-            .Column(col => col.Width(30).Add(_detailHeader).Add(_detailPanel.Control))
+            .Column(col => col.Width(30).Add(_rightPanelTabs))
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
             .Build();
@@ -145,7 +154,7 @@ public partial class CXFilesApp
         // Apply initial visibility for detail panel
         if (!_detailVisible)
         {
-            _detailPanel.Control.Visible = false;
+            _rightPanelTabs.Visible = false;
             var splitters = _mainGrid.Splitters;
             if (splitters.Count >= 2)
                 splitters[1].Visible = false;

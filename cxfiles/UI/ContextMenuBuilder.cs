@@ -21,6 +21,8 @@ public class ContextMenuBuilder
     public event Action? OnPaste;
     public event Action<bool>? OnNewItem;
     public event Action? OnRefresh;
+    public event Action<FileEntry>? OnOpenInEditor;
+    public event Action<string>? OnOpenTerminal;
 
     public bool IsOpen => _portal != null;
 
@@ -54,10 +56,16 @@ public class ContextMenuBuilder
         var items = new List<ContextMenuItem>
         {
             new("Open", "Enter", () => OnOpen?.Invoke(entry)),
-            new("-"),
-            new("Copy", "^C", () => OnCopy?.Invoke()),
-            new("Cut", "^X", () => OnCut?.Invoke()),
         };
+
+        if (!entry.IsDirectory)
+            items.Add(new("Open in editor", "^E", () => OnOpenInEditor?.Invoke(entry)));
+
+        items.Add(new("Open terminal here", "", () => OnOpenTerminal?.Invoke(
+            entry.IsDirectory ? entry.FullPath : Path.GetDirectoryName(entry.FullPath) ?? "")));
+        items.Add(new("-"));
+        items.Add(new("Copy", "^C", () => OnCopy?.Invoke()));
+        items.Add(new("Cut", "^X", () => OnCut?.Invoke()));
 
         if (hasClipboard)
             items.Add(new("Paste", "^V", () => OnPaste?.Invoke()));
@@ -85,6 +93,7 @@ public class ContextMenuBuilder
         var items = new List<ContextMenuItem>
         {
             new("Open", "Enter", () => onNavigate(folderPath)),
+            new("Open terminal here", "", () => OnOpenTerminal?.Invoke(folderPath)),
             new("-"),
             new("New Folder", "^⇧N", () => OnNewItem?.Invoke(true)),
             new("New File", "^N", () => OnNewItem?.Invoke(false)),

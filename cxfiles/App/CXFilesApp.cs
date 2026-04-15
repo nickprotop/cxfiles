@@ -20,6 +20,7 @@ public partial class CXFilesApp
     private readonly OperationManager _operations;
     private readonly ITrashService _trash;
     private readonly SudoService _sudo;
+    private readonly LauncherService _launcher;
     private Window? _mainWindow;
 
     // UI Components
@@ -30,7 +31,9 @@ public partial class CXFilesApp
     private ToolbarControl _toolbar = null!;
     private HorizontalGridControl? _mainGrid;
     private StatusBarControl _treeHeader = null!;
-    private StatusBarControl _detailHeader = null!;
+    private TabControl _rightPanelTabs = null!;
+    private SharpConsoleUI.Controls.Terminal.TerminalControl? _terminal;
+    private string? _terminalFolder;
     private UI.ContextMenuBuilder _contextMenu = null!;
     private UI.OperationsPortal? _opsPortal;
     private LayoutNode? _opsPortalNode;
@@ -49,7 +52,7 @@ public partial class CXFilesApp
     private FileListPanel ActiveFileList => ActiveTab.FileList;
 
     public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config,
-        OperationManager operations, ITrashService trash, SudoService sudo)
+        OperationManager operations, ITrashService trash, SudoService sudo, LauncherService launcher)
     {
         _ws = ws;
         _fs = fs;
@@ -57,6 +60,7 @@ public partial class CXFilesApp
         _operations = operations;
         _trash = trash;
         _sudo = sudo;
+        _launcher = launcher;
         _detailVisible = config.Config.ShowDetailPanel;
     }
 
@@ -75,7 +79,7 @@ public partial class CXFilesApp
 
         if (_detailVisible)
         {
-            _detailPanel.Control.Visible = false;
+            _rightPanelTabs.Visible = false;
             if (_mainGrid != null)
             {
                 var splitters = _mainGrid.Splitters;
@@ -103,7 +107,7 @@ public partial class CXFilesApp
 
         if (tab.ViewingTrash && _detailVisible)
         {
-            _detailPanel.Control.Visible = true;
+            _rightPanelTabs.Visible = true;
             if (_mainGrid != null)
             {
                 var splitters = _mainGrid.Splitters;
@@ -155,6 +159,8 @@ public partial class CXFilesApp
                 CancelAndRestore(tab);
             if (entry.IsDirectory)
                 NavigateTo(entry.FullPath);
+            else
+                _launcher.OpenWithDefault(entry.FullPath);
         };
         tab.FileList.SelectionChanged += info =>
         {
@@ -260,7 +266,7 @@ public partial class CXFilesApp
     private void ToggleDetailPanel()
     {
         _detailVisible = !_detailVisible;
-        _detailPanel.Control.Visible = _detailVisible;
+        _rightPanelTabs.Visible = _detailVisible;
 
         // Also hide/show the right splitter (between file list and detail)
         if (_mainGrid != null)
@@ -278,6 +284,56 @@ public partial class CXFilesApp
         _config.Config.ShowDetailPanel = _detailVisible;
         UpdateStatusLine();
         _mainWindow?.Invalidate(true);
+    }
+
+    private void OpenOrSwitchTerminal() => OpenTerminalAt(ActiveTab.Path);
+
+    private void OpenTerminalAt(string path)
+    {
+        if (!_detailVisible)
+        {
+            ToggleDetailPanel();
+        }
+
+        // If terminal exists for a different folder, dispose and recreate
+        if (_terminal != null && _terminalFolder != path)
+        {
+            DisposeTerminal();
+        }
+
+        // Create terminal if needed
+        if (_terminal == null)
+        {
+            _terminal = Controls.Terminal()
+                .WithWorkingDirectory(path)
+                .Build();
+            _terminalFolder = path;
+            _terminal.ProcessExited += (_, _) => _ws.EnqueueOnUIThread(() =>
+            {
+                DisposeTerminal();
+                _rightPanelTabs.ActiveTabIndex = 0; // switch to Preview
+            });
+            _rightPanelTabs.AddTab("Terminal", _terminal, isClosable: false);
+        }
+
+        // Switch to terminal tab
+        _rightPanelTabs.ActiveTabIndex = _rightPanelTabs.TabCount - 1;
+    }
+
+    private void DisposeTerminal()
+    {
+        if (_terminal != null)
+        {
+            var term = _terminal;
+            _terminal = null;
+            _terminalFolder = null;
+
+            // Remove terminal tab (it's always the last tab)
+            if (_rightPanelTabs.TabCount > 1)
+                _rightPanelTabs.RemoveTab(_rightPanelTabs.TabCount - 1);
+
+            term.Dispose();
+        }
     }
 
     private void Refresh()

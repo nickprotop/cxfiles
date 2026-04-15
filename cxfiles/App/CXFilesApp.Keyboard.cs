@@ -134,6 +134,33 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.E when ctrl: // Ctrl+E open in editor
+                var editorEntry = ActiveFileList.GetSelectedEntry();
+                if (editorEntry != null && !editorEntry.IsDirectory)
+                    _launcher.OpenWithEditor(editorEntry.FullPath);
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.Oem3 when ctrl: // Ctrl+` toggle terminal
+            case ConsoleKey.F7: // F7 toggle terminal (fallback)
+                if (!ActiveTab.ViewingTrash)
+                    OpenOrSwitchTerminal();
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.F6: // Toggle focus to/from terminal
+                if (_terminal != null && _rightPanelTabs.ActiveTabIndex == _rightPanelTabs.TabCount - 1)
+                {
+                    if (_terminal.HasFocus)
+                        SharpConsoleUI.Extensions.WindowControlExtensions.RequestFocus(
+                            ActiveFileList.Control, SharpConsoleUI.Controls.FocusReason.Keyboard);
+                    else
+                        SharpConsoleUI.Extensions.WindowControlExtensions.RequestFocus(
+                            _terminal, SharpConsoleUI.Controls.FocusReason.Keyboard);
+                }
+                e.Handled = true;
+                break;
+
             case ConsoleKey.T when ctrl: // Ctrl+T new tab
                 NewTab();
                 e.Handled = true;

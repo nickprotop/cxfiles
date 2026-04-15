@@ -21,7 +21,7 @@ public class OptionsModal : ModalBase<bool>
 
     protected override string GetTitle() => "Options";
     protected override int GetWidth() => 60;
-    protected override int GetHeight() => 20;
+    protected override int GetHeight() => 28;
     protected override bool GetDefaultResult() => false;
     protected override bool OnClosedByButton() => true; // settings auto-saved, apply on close
 
@@ -112,6 +112,42 @@ public class OptionsModal : ModalBase<bool>
             _config.Save();
         };
         panel.AddControl(autoSelectCheck);
+
+        panel.AddControl(Controls.Markup()
+            .AddEmptyLine()
+            .AddLine("[bold]External Tools[/]")
+            .AddEmptyLine()
+            .AddLine("[dim]Editor command (empty = $EDITOR or system default):[/]")
+            .Build());
+
+        var editorPrompt = Controls.Prompt("Editor: ")
+            .WithInput(_config.Config.EditorCommand)
+            .WithInputWidth(30)
+            .UnfocusOnEnter(false)
+            .OnEntered((_, text) =>
+            {
+                _config.Config.EditorCommand = text;
+                _config.Save();
+            })
+            .Build();
+        panel.AddControl(editorPrompt);
+
+        panel.AddControl(Controls.Markup()
+            .AddEmptyLine()
+            .AddLine("[dim]External terminal command (empty = auto-detect):[/]")
+            .Build());
+
+        var terminalPrompt = Controls.Prompt("Terminal: ")
+            .WithInput(_config.Config.ExternalTerminalCommand)
+            .WithInputWidth(30)
+            .UnfocusOnEnter(false)
+            .OnEntered((_, text) =>
+            {
+                _config.Config.ExternalTerminalCommand = text;
+                _config.Save();
+            })
+            .Build();
+        panel.AddControl(terminalPrompt);
 
         panel.AddControl(Controls.Markup()
             .AddLine($"[dim]Maximum tabs: {_config.Config.MaxTabs} (edit config file to change)[/]")

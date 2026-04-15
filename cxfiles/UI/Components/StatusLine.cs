@@ -15,6 +15,7 @@ public class StatusLine
     public event Action? OperationsClicked;
     public event Action? ClipboardClicked;
     public event Action? RefreshClicked;
+    public event Action? HelpClicked;
 
     // Cached last-Update args for incremental re-render when search progress changes.
     private Action? _lastRender;
@@ -125,6 +126,11 @@ public class StatusLine
 
             _bar.AddRightText("[grey70]Options[/] [grey50]^O[/]",
                 () => OptionsClicked?.Invoke());
+
+            _bar.AddRightSeparator();
+
+            _bar.AddRightText("[cyan1]Help[/] [grey50]F1[/]",
+                () => HelpClicked?.Invoke());
         });
     }
 }

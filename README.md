@@ -58,6 +58,8 @@ cxfiles
 | 📎 **Clipboard Portal** | View, manage, and remove individual clipboard items (`Ctrl+B`) |
 | 🌳 **Folder Tree** | Lazy-loading tree with single-click navigation and two-way sync |
 | 🔍 **Filter & Sort** | Fuzzy filtering (`/`), click-to-sort columns, column resize |
+| 🔎 **Recursive Search** | `Ctrl+F` opens a per-tab search bar; results stream live as a background walker finds matches, dirs first, with a `Path` column. Cancellable, cross-filesystem aware (skips `/proc`, `/sys`, foreign mounts), 200k entry cap. Lazy metadata hydration keeps the walker fast on huge trees. `./` prefix forces non-recursive; `Esc` restores the previous listing |
+| ❓ **Help & About** | `F1` opens a tabbed modal: categorized keyboard cheatsheet plus an About tab with figlet, environment info, and live home-volume usage |
 | 📊 **Operations Portal** | Live progress bars, per-file status, cancel buttons, dismiss completed (`Ctrl+P`) |
 | 🖱️ **Context Menus** | Right-click on files or folders for contextual actions |
 | 📁 **Breadcrumb Bar** | Clickable path segments with quick-access locations (Home, Desktop, Docs, Downloads, Trash) |
@@ -80,6 +82,7 @@ cxfiles
 | `Enter` | Open file/folder |
 | `Backspace` | Navigate to parent |
 | `Delete` | Delete selected (trash or permanent) |
+| `F1` | Help & About |
 | `F2` | Rename |
 | `F3` | Toggle detail panel |
 | `F4` | Properties (selection, or current folder if nothing selected) |
@@ -97,7 +100,8 @@ cxfiles
 | `Ctrl+P` | Operations portal |
 | `Ctrl+H` | Toggle hidden files |
 | `Ctrl+O` | Options |
-| `/` | Filter file list |
+| `Ctrl+F` | Recursive search in current folder |
+| `/` | Filter file list (current folder only) |
 | `Ctrl+Q` | Quit |
 
 ## The Properties dialog

@@ -93,6 +93,7 @@ public partial class CXFilesApp
         _statusLine.OptionsClicked += () => _ = ShowOptionsAsync();
         _statusLine.OperationsClicked += ShowOperationsPortal;
         _statusLine.ClipboardClicked += ShowClipboardPortal;
+        _statusLine.HelpClicked += () => _ = ShowHelpAsync();
 
         // Top rule
         var topRule = Controls.RuleBuilder()

@@ -45,6 +45,11 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.F1:
+                _ = ShowHelpAsync();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.F2:
                 _ = RenameSelectedAsync();
                 e.Handled = true;
@@ -323,6 +328,11 @@ public partial class CXFilesApp
             catch { return; }
         }
         await PropertiesModal.ShowAsync(_ws, _fs, entry, _mainWindow);
+    }
+
+    private async Task ShowHelpAsync()
+    {
+        await HelpModal.ShowAsync(_ws, _mainWindow);
     }
 
     private async Task NewItemAsync(bool isDirectory)

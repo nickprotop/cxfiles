@@ -13,6 +13,26 @@ public partial class CXFilesApp
         bool shift = key.Modifiers.HasFlag(ConsoleModifiers.Shift);
         bool alt = key.Modifiers.HasFlag(ConsoleModifiers.Alt);
 
+        // When the terminal has focus, only allow app-level keys through.
+        // The PreviewKeyPressed handler (Layout.cs) already intercepted these
+        // keys before the terminal could convert them to escape sequences.
+        // For all other keys, let the terminal own them.
+        if (_terminal != null && _terminal.HasFocus)
+        {
+            switch (key.Key)
+            {
+                case ConsoleKey.F1:
+                case ConsoleKey.F6:
+                case ConsoleKey.F7:
+                case ConsoleKey.F8:
+                case ConsoleKey.Oem3 when ctrl:
+                case ConsoleKey.Q when ctrl:
+                    break; // fall through to app handlers
+                default:
+                    return; // terminal owns this key
+            }
+        }
+
         // When the search bar has focus, defer text-editing keys to it.
         // Without this guard, e.g. Backspace would call NavigateUp() and
         // mutate tab.Path mid-search — the next walker would start from
@@ -137,7 +157,7 @@ public partial class CXFilesApp
             case ConsoleKey.E when ctrl: // Ctrl+E open in editor
                 var editorEntry = ActiveFileList.GetSelectedEntry();
                 if (editorEntry != null && !editorEntry.IsDirectory)
-                    _launcher.OpenWithEditor(editorEntry.FullPath);
+                    OpenInEditor(editorEntry.FullPath);
                 e.Handled = true;
                 break;
 
@@ -148,14 +168,20 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.F8: // Toggle terminal position (right panel / center)
+                if (_terminal != null)
+                    ToggleTerminalPosition();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.F6: // Toggle focus to/from terminal
-                if (_terminal != null && _rightPanelTabs.ActiveTabIndex == _rightPanelTabs.TabCount - 1)
+                if (_terminal != null)
                 {
                     if (_terminal.HasFocus)
                         SharpConsoleUI.Extensions.WindowControlExtensions.RequestFocus(
                             ActiveFileList.Control, SharpConsoleUI.Controls.FocusReason.Keyboard);
                     else
-                        SharpConsoleUI.Extensions.WindowControlExtensions.RequestFocus(
+                        _mainWindow?.FocusManager?.SetFocus(
                             _terminal, SharpConsoleUI.Controls.FocusReason.Keyboard);
                 }
                 e.Handled = true;

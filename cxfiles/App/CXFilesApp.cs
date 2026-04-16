@@ -34,6 +34,7 @@ public partial class CXFilesApp
     private TabControl _rightPanelTabs = null!;
     private SharpConsoleUI.Controls.Terminal.TerminalControl? _terminal;
     private string? _terminalFolder;
+    private bool _terminalInMiddle;
     private UI.ContextMenuBuilder _contextMenu = null!;
     private UI.OperationsPortal? _opsPortal;
     private LayoutNode? _opsPortalNode;
@@ -48,7 +49,7 @@ public partial class CXFilesApp
     private bool _detailVisible;
     private readonly ClipboardState _clipboard = new();
 
-    private TabState ActiveTab => _tabs[_tabControl.ActiveTabIndex];
+    private TabState ActiveTab => _tabs[Math.Min(_tabControl.ActiveTabIndex, _tabs.Count - 1)];
     private FileListPanel ActiveFileList => ActiveTab.FileList;
 
     public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config,
@@ -70,6 +71,7 @@ public partial class CXFilesApp
         NavigateTo(_config.Config.DefaultPath);
         _ws.AddWindow(_mainWindow!);
         _ws.Run();
+        DisposeTerminal();
     }
 
     public void NavigateToTrash()
@@ -192,6 +194,8 @@ public partial class CXFilesApp
 
     private void OnTabChanged(TabChangedEventArgs e)
     {
+        if (e.NewIndex < 0 || e.NewIndex >= _tabs.Count)
+            return; // terminal/editor tab — not a file browser tab
         var tab = _tabs[e.NewIndex];
         _breadcrumb.Update(tab.Path);
         if (_config.Config.SyncTreeToTab && !tab.ViewingTrash)
@@ -290,50 +294,139 @@ public partial class CXFilesApp
 
     private void OpenTerminalAt(string path)
     {
-        if (!_detailVisible)
-        {
+        if (!_detailVisible && !_terminalInMiddle)
             ToggleDetailPanel();
-        }
 
         // If terminal exists for a different folder, dispose and recreate
         if (_terminal != null && _terminalFolder != path)
-        {
             DisposeTerminal();
-        }
 
-        // Create terminal if needed
         if (_terminal == null)
+            CreateTerminal(path);
+
+        // Switch to terminal tab in whichever TabControl it lives in
+        if (_terminalInMiddle)
+            _tabControl.SwitchToTab("Terminal");
+        else
+            _rightPanelTabs.SwitchToTab("Terminal");
+
+        // Focus terminal so keystrokes go directly to it
+        _mainWindow?.FocusManager?.SetFocus(_terminal, SharpConsoleUI.Controls.FocusReason.Keyboard);
+        UpdateStatusLine();
+    }
+
+    private void OpenInEditor(string filePath)
+    {
+        // Resolve editor command
+        var cmd = _config.Config.EditorCommand;
+        if (string.IsNullOrWhiteSpace(cmd))
+            cmd = Environment.GetEnvironmentVariable("EDITOR");
+        if (string.IsNullOrWhiteSpace(cmd))
+            cmd = "nano";
+
+        // Dispose existing terminal if any — editor takes the same slot
+        DisposeTerminal();
+
+        if (!_detailVisible && !_terminalInMiddle)
+            ToggleDetailPanel();
+
+        _terminal = Controls.Terminal()
+            .WithExe(cmd)
+            .WithArgs(filePath)
+            .WithWorkingDirectory(Path.GetDirectoryName(filePath) ?? ActiveTab.Path)
+            .Build();
+        _terminalFolder = null; // editor, not a folder terminal
+
+        var captured = _terminal;
+        captured.ProcessExited += (_, _) => _ws.EnqueueOnUIThread(() =>
         {
-            _terminal = Controls.Terminal()
-                .WithWorkingDirectory(path)
-                .Build();
-            _terminalFolder = path;
-            _terminal.ProcessExited += (_, _) => _ws.EnqueueOnUIThread(() =>
+            if (_terminal == captured) DisposeTerminal();
+        });
+
+        _rightPanelTabs.AddTab("Editor", _terminal!, isClosable: true);
+        _rightPanelTabs.SwitchToTab("Editor");
+        UpdateStatusLine();
+    }
+
+    private void CreateTerminal(string path)
+    {
+        _terminal = Controls.Terminal()
+            .WithWorkingDirectory(path)
+            .Build();
+        _terminalFolder = path;
+
+        var captured = _terminal;
+        captured.ProcessExited += (_, _) => _ws.EnqueueOnUIThread(() =>
+        {
+            if (_terminal == captured) DisposeTerminal();
+        });
+
+        if (_terminalInMiddle)
+            _tabControl.AddTab("Terminal", _terminal!, isClosable: true);
+        else
+            _rightPanelTabs.AddTab("Terminal", _terminal!, isClosable: true);
+    }
+
+    private void ToggleTerminalPosition()
+    {
+        if (_terminal == null) return;
+
+        _terminal.NudgeOnNextResize();
+
+        var tabName = _terminalFolder != null ? "Terminal" : "Editor";
+        var source = _terminalInMiddle ? _tabControl : _rightPanelTabs;
+        var target = _terminalInMiddle ? _rightPanelTabs : _tabControl;
+
+        // Extract from source
+        for (int i = 0; i < source.TabCount; i++)
+        {
+            if (source.GetTab(i)?.Content == _terminal)
             {
-                DisposeTerminal();
-                _rightPanelTabs.ActiveTabIndex = 0; // switch to Preview
-            });
-            _rightPanelTabs.AddTab("Terminal", _terminal, isClosable: false);
+                source.ExtractTab(i);
+                break;
+            }
         }
 
-        // Switch to terminal tab
-        _rightPanelTabs.ActiveTabIndex = _rightPanelTabs.TabCount - 1;
+        // Add to target
+        _terminalInMiddle = !_terminalInMiddle;
+        target.AddTab(tabName, _terminal, isClosable: true);
+        target.SwitchToTab(tabName);
+
+        // Ensure detail panel is visible when moving back to right panel
+        if (!_terminalInMiddle && !_detailVisible)
+            ToggleDetailPanel();
+
+        // Force layout recalculation so the terminal resizes to new panel dimensions
+        _mainWindow?.ForceRebuildLayout();
+        _mainWindow?.Invalidate(true);
+
+        // Focus the terminal so keystrokes go to it
+        _mainWindow?.FocusManager?.SetFocus(_terminal, SharpConsoleUI.Controls.FocusReason.Keyboard);
+        UpdateStatusLine();
     }
 
     private void DisposeTerminal()
     {
-        if (_terminal != null)
+        if (_terminal == null) return;
+
+        var term = _terminal;
+        _terminal = null;
+        _terminalFolder = null;
+
+        // Extract tab (without disposing content) from whichever TabControl it's in
+        var targetTabs = _terminalInMiddle ? _tabControl : _rightPanelTabs;
+        for (int i = 0; i < targetTabs.TabCount; i++)
         {
-            var term = _terminal;
-            _terminal = null;
-            _terminalFolder = null;
-
-            // Remove terminal tab (it's always the last tab)
-            if (_rightPanelTabs.TabCount > 1)
-                _rightPanelTabs.RemoveTab(_rightPanelTabs.TabCount - 1);
-
-            term.Dispose();
+            if (targetTabs.GetTab(i)?.Content == term)
+            {
+                targetTabs.ExtractTab(i);
+                break;
+            }
         }
+
+        _terminalInMiddle = false;
+        term.Dispose();
+        UpdateStatusLine();
     }
 
     private void Refresh()
@@ -436,7 +529,9 @@ public partial class CXFilesApp
             _operations.ActiveCount,
             _operations.TotalCount,
             _clipboard.HasContent ? _clipboard.Paths.Count : 0,
-            _clipboard.HasContent ? (_clipboard.Action == Services.ClipboardAction.Cut ? "Cut" : "Copy") : null);
+            _clipboard.HasContent ? (_clipboard.Action == Services.ClipboardAction.Cut ? "Cut" : "Copy") : null,
+            _terminal != null,
+            _terminalInMiddle);
     }
 
     private int GetCheckedCount()
@@ -511,6 +606,8 @@ public partial class CXFilesApp
             AddToolbarButton($"⊡ Paste ({_clipboard.Paths.Count}) [grey50]^V[/]",
                 () => _ = PasteAsync());
         }
+        _toolbar.AddItem(new SeparatorControl());
+        AddToolbarButton("↻ Refresh [grey50]F5[/]", Refresh);
     }
 
     private void UpdateTrashToolbar()
@@ -528,6 +625,8 @@ public partial class CXFilesApp
         AddToolbarButton("↑ Back [grey50]Bksp[/]", () => NavigateTo(ActiveTab.Path));
         if (_tabs.Count < _config.Config.MaxTabs)
             AddToolbarButton("❒ New Tab [grey50]^T[/]", NewTab);
+        _toolbar.AddItem(new SeparatorControl());
+        AddToolbarButton("↻ Refresh [grey50]F5[/]", Refresh);
     }
 
     private async Task RestoreFromTrashAsync()

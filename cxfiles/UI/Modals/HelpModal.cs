@@ -111,8 +111,9 @@ public class HelpModal : ModalBase<bool>
         ("Open", new[]
         {
             ("Enter",       "Open file / navigate folder"),
-            ("Ctrl+E",      "Open in editor"),
-            ("Ctrl+`",      "Toggle terminal"),
+            ("Ctrl+E",      "Open in embedded editor"),
+            ("Ctrl+` / F7", "Toggle embedded terminal"),
+            ("F8",          "Move terminal: right panel / center"),
             ("F6",          "Focus file list / terminal"),
         }),
         ("View", new[]

@@ -52,6 +52,12 @@ public partial class CXFilesApp
         _tabControl.TabChanged += (_, e) => OnTabChanged(e);
         _tabControl.TabCloseRequested += (_, e) =>
         {
+            // Check if this is the terminal tab (in middle column)
+            if (_terminalInMiddle && e.TabPage.Content == _terminal)
+            {
+                DisposeTerminal();
+                return;
+            }
             if (_tabControl.TabCount > 1)
             {
                 _tabs[e.Index].Dispose();
@@ -71,7 +77,7 @@ public partial class CXFilesApp
             else
                 _launcher.OpenWithDefault(entry.FullPath);
         };
-        _contextMenu.OnOpenInEditor += entry => _launcher.OpenWithEditor(entry.FullPath);
+        _contextMenu.OnOpenInEditor += entry => OpenInEditor(entry.FullPath);
         _contextMenu.OnOpenTerminal += dir => OpenTerminalAt(dir);
         _contextMenu.OnRename += () => _ = RenameSelectedAsync();
         _contextMenu.OnDelete += () => _ = DeleteSelectedAsync();
@@ -101,6 +107,16 @@ public partial class CXFilesApp
         _statusLine.OperationsClicked += ShowOperationsPortal;
         _statusLine.ClipboardClicked += ShowClipboardPortal;
         _statusLine.HelpClicked += () => _ = ShowHelpAsync();
+        _statusLine.TerminalToggled += () =>
+        {
+            if (!ActiveTab.ViewingTrash)
+                OpenOrSwitchTerminal();
+        };
+        _statusLine.TerminalDockToggled += () =>
+        {
+            if (_terminal != null)
+                ToggleTerminalPosition();
+        };
 
         // Top rule
         var topRule = Controls.RuleBuilder()
@@ -135,6 +151,11 @@ public partial class CXFilesApp
         _rightPanelTabs.HorizontalAlignment = HorizontalAlignment.Stretch;
         _rightPanelTabs.VerticalAlignment = VerticalAlignment.Fill;
         _rightPanelTabs.BackgroundColor = Color.Transparent;
+        _rightPanelTabs.TabCloseRequested += (_, e) =>
+        {
+            if (e.TabPage.Content == _terminal)
+                DisposeTerminal();
+        };
         _rightPanelTabs.AddTab("Preview", _detailPanel.Control, isClosable: false);
 
         // Main grid: tree | splitter | file list | splitter | detail
@@ -205,6 +226,29 @@ public partial class CXFilesApp
             {
                 _clipPortal.ProcessKey(e.KeyInfo);
                 e.Handled = true;
+                return;
+            }
+
+            // When the terminal has focus, intercept app-level keys BEFORE
+            // the terminal's ProcessKey converts them to escape sequences
+            // (otherwise e.g. F8 → \e[19~ leaks '~' into bash).
+            if (_terminal != null && _terminal.HasFocus)
+            {
+                bool ctrl = e.KeyInfo.Modifiers.HasFlag(ConsoleModifiers.Control);
+                switch (e.KeyInfo.Key)
+                {
+                    case ConsoleKey.F1:
+                    case ConsoleKey.F6:
+                    case ConsoleKey.F7:
+                    case ConsoleKey.F8:
+                    case ConsoleKey.Oem3 when ctrl:
+                    case ConsoleKey.Q when ctrl:
+                        // Handled=true blocks the terminal, then we forward
+                        // to the global handler ourselves.
+                        e.Handled = true;
+                        OnGlobalKeyPressed(null, e);
+                        return;
+                }
             }
         };
 

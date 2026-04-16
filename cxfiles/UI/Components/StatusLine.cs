@@ -16,6 +16,8 @@ public class StatusLine
     public event Action? ClipboardClicked;
     public event Action? RefreshClicked;
     public event Action? HelpClicked;
+    public event Action? TerminalToggled;
+    public event Action? TerminalDockToggled;
 
     // Cached last-Update args for incremental re-render when search progress changes.
     private Action? _lastRender;
@@ -55,15 +57,17 @@ public class StatusLine
     }
 
     public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
-        int activeOps = 0, int totalOps = 0, int clipboardCount = 0, string? clipboardAction = null)
+        int activeOps = 0, int totalOps = 0, int clipboardCount = 0, string? clipboardAction = null,
+        bool terminalOpen = false, bool terminalInMiddle = false)
     {
         _lastRender = () => Render(itemCount, selectedCount, detailVisible, showHidden,
-            activeOps, totalOps, clipboardCount, clipboardAction);
+            activeOps, totalOps, clipboardCount, clipboardAction, terminalOpen, terminalInMiddle);
         _lastRender();
     }
 
     private void Render(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
-        int activeOps, int totalOps, int clipboardCount, string? clipboardAction)
+        int activeOps, int totalOps, int clipboardCount, string? clipboardAction,
+        bool terminalOpen, bool terminalInMiddle)
     {
         _bar.BatchUpdate(() =>
         {
@@ -107,8 +111,17 @@ public class StatusLine
             }
 
             // Right: actions + toggle buttons
-            _bar.AddRightText("[grey70]Refresh[/] [grey50]F5[/]",
-                () => RefreshClicked?.Invoke());
+            var termColor = terminalOpen ? "cyan1" : "grey70";
+            _bar.AddRightText($"[{termColor}]Terminal[/] [grey50]F7[/]",
+                () => TerminalToggled?.Invoke());
+
+            if (terminalOpen)
+            {
+                _bar.AddRightSeparator();
+                var dockLabel = terminalInMiddle ? "Dock ◨" : "Undock ◧";
+                _bar.AddRightText($"[grey70]{dockLabel}[/] [grey50]F8[/]",
+                    () => TerminalDockToggled?.Invoke());
+            }
 
             _bar.AddRightSeparator();
 

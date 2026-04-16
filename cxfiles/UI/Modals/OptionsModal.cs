@@ -133,23 +133,6 @@ public class OptionsModal : ModalBase<bool>
         panel.AddControl(editorPrompt);
 
         panel.AddControl(Controls.Markup()
-            .AddEmptyLine()
-            .AddLine("[dim]External terminal command (empty = auto-detect):[/]")
-            .Build());
-
-        var terminalPrompt = Controls.Prompt("Terminal: ")
-            .WithInput(_config.Config.ExternalTerminalCommand)
-            .WithInputWidth(30)
-            .UnfocusOnEnter(false)
-            .OnEntered((_, text) =>
-            {
-                _config.Config.ExternalTerminalCommand = text;
-                _config.Save();
-            })
-            .Build();
-        panel.AddControl(terminalPrompt);
-
-        panel.AddControl(Controls.Markup()
             .AddLine($"[dim]Maximum tabs: {_config.Config.MaxTabs} (edit config file to change)[/]")
             .Build());
     }

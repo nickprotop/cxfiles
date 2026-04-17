@@ -69,7 +69,9 @@ cxfiles
 | 💽 **Space Tab** | Live drive usage + a **breakdown** of the folder's immediate children as sorted bar graphs — answers "where's my disk going?" without leaving the app |
 | 🔐 **Checksums Tab** | On-demand MD5 / SHA256 with progress bar; cancel by closing the dialog |
 | ✅ **Multi-Select** | Checkbox selection with bulk copy, cut, delete |
-| 🔑 **Sudo Elevation** | Password dialog for privileged operations on Linux/macOS |
+| 🖥️ **Embedded Terminal** | Full PTY-backed terminal (`F7`/`Ctrl+``); dock to right panel or center column (`F8`); auto-resize with prompt redraw |
+| ✏️ **Embedded Editor** | `Ctrl+E` opens files in `$EDITOR` (or nano) inside the embedded terminal |
+| 🔑 **Sudo Elevation** | Automatic sudo prompt on permission-denied for delete, rename, copy, move, create, and trash restore (Linux/macOS) |
 | ⚙️ **Options Dialog** | NavigationView-based settings with per-OS config storage |
 | 👻 **Hidden Files** | Toggle visibility with `Ctrl+H` |
 | 📡 **File Watcher** | Auto-refresh on external filesystem changes |
@@ -87,6 +89,10 @@ cxfiles
 | `F3` | Toggle detail panel |
 | `F4` | Properties (selection, or current folder if nothing selected) |
 | `F5` | Refresh |
+| `Ctrl+E` | Open file in embedded editor |
+| `Ctrl+`` / `F7` | Toggle embedded terminal |
+| `F8` | Dock/undock terminal (right panel / center column) |
+| `F6` | Toggle focus between file list and terminal |
 | `Ctrl+N` | New file |
 | `Ctrl+Shift+N` | New folder |
 | `Ctrl+T` | New tab |
@@ -102,7 +108,7 @@ cxfiles
 | `Ctrl+O` | Options |
 | `Ctrl+F` | Recursive search in current folder |
 | `/` | Filter file list (current folder only) |
-| `Ctrl+Q` | Quit |
+| `Ctrl+Q` | Quit (confirms if terminal or operations active) |
 
 ## The Properties dialog
 

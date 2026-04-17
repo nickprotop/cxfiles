@@ -105,6 +105,25 @@ public partial class CXFilesApp
     {
         if (!_fs.DirectoryExists(path)) return;
 
+        // Check if directory is readable before navigating
+        try
+        {
+            Directory.GetFileSystemEntries(path, "*", new EnumerationOptions
+            {
+                IgnoreInaccessible = false,
+                RecurseSubdirectories = false,
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _ws.NotificationStateService.ShowNotification(
+                "Permission denied",
+                $"Cannot read {path}",
+                SharpConsoleUI.Core.NotificationSeverity.Warning);
+            return;
+        }
+        catch { /* other errors — let Navigate handle them */ }
+
         var tab = ActiveTab;
 
         if (tab.ViewingTrash && _detailVisible)
@@ -643,6 +662,12 @@ public partial class CXFilesApp
             await _trash.RestoreAsync(entry.TrashedName, CancellationToken.None);
             _operations.CompleteOperation(op, Services.OperationStatus.Completed);
         }
+        catch (UnauthorizedAccessException) when (_sudo.IsSupported)
+        {
+            _operations.RemoveOperation(op);
+            PromptSudoRestore(entry);
+            return;
+        }
         catch (Exception ex)
         {
             _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
@@ -676,6 +701,52 @@ public partial class CXFilesApp
                 "Error", $"Delete failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
         }
         NavigateToTrash();
+    }
+
+    private void PromptSudoRestore(Models.TrashEntry entry)
+    {
+        var sourcePath = Path.Combine(_trash.TrashPath, "files", entry.TrashedName);
+        var desc = $"Restore \"{entry.TrashedName}\" to {entry.OriginalPath}\n\nThis requires elevated privileges (sudo mv).";
+
+        UI.Modals.SudoDialog.Show(desc, _ws, result =>
+        {
+            if (result.Cancelled || !result.Success) return;
+
+            var op = _operations.StartOperation(Services.OperationType.Move, $"Restoring {entry.TrashedName} (sudo)");
+            UpdateStatusLine();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    // Ensure destination directory exists
+                    var destDir = Path.GetDirectoryName(entry.OriginalPath);
+                    if (destDir != null && !Directory.Exists(destDir))
+                    {
+                        var (mkOk, mkErr) = await _sudo.CreateDirectoryAsync(destDir, result.Password, CancellationToken.None);
+                        if (!mkOk)
+                            throw new InvalidOperationException(mkErr ?? "Failed to create destination directory");
+                    }
+
+                    // Move from trash to original location
+                    var (ok, err) = await _sudo.MoveAsync(sourcePath, entry.OriginalPath, result.Password, CancellationToken.None);
+                    if (!ok)
+                        throw new InvalidOperationException(err ?? "Restore failed");
+
+                    // Clean up trash info file (user-owned, no sudo needed)
+                    var infoPath = Path.Combine(_trash.TrashPath, "info", entry.TrashedName + ".trashinfo");
+                    try { File.Delete(infoPath); } catch { }
+
+                    _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                    _ws.EnqueueOnUIThread(NavigateToTrash);
+                }
+                catch (Exception ex)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+                }
+                _ws.EnqueueOnUIThread(UpdateStatusLine);
+            });
+        });
     }
 
     private async Task EmptyTrashAsync()

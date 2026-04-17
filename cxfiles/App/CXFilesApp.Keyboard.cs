@@ -217,7 +217,7 @@ public partial class CXFilesApp
             case ConsoleKey.D5 when ctrl: JumpToTab(4); e.Handled = true; break;
 
             case ConsoleKey.Q when ctrl:
-                _ws.Shutdown();
+                _ = QuitAsync();
                 e.Handled = true;
                 break;
         }
@@ -579,5 +579,28 @@ public partial class CXFilesApp
                     "Error", $"Create failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
             }
         }
+    }
+
+    private async Task QuitAsync()
+    {
+        var warnings = new List<string>();
+
+        if (_operations.ActiveCount > 0)
+            warnings.Add($"{_operations.ActiveCount} operation{(_operations.ActiveCount > 1 ? "s" : "")} in progress");
+
+        if (_terminal != null)
+            warnings.Add("embedded terminal is running");
+
+        if (warnings.Count == 0)
+        {
+            _ws.Shutdown();
+            return;
+        }
+
+        var message = string.Join(" and ", warnings) + ". Quit anyway?";
+        message = char.ToUpper(message[0]) + message[1..];
+
+        if (await ConfirmModal.ShowAsync(_ws, "Quit", message, _mainWindow))
+            _ws.Shutdown();
     }
 }

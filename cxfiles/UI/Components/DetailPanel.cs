@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Imaging;
 using SharpConsoleUI.Layout;
 using CXFiles.Models;
 using CXFiles.Services;
@@ -12,6 +13,7 @@ public class DetailPanel
     private readonly IFileSystemService _fs;
     private readonly ScrollablePanelControl _panel;
     private readonly MarkupControl _info;
+    private readonly ImageControl _image;
 
     public ScrollablePanelControl Control => _panel;
 
@@ -23,6 +25,14 @@ public class DetailPanel
             .Build();
         _info.SetContent(new List<string> { "[dim]Select a file to see details[/]" });
 
+        _image = Controls.Image()
+            .Fit()
+            .WithAlignment(HorizontalAlignment.Center)
+            .WithVerticalAlignment(VerticalAlignment.Top)
+            .WithMargin(0, 1, 0, 0)
+            .Build();
+        _image.Visible = false;
+
         _panel = Controls.ScrollablePanel()
             .WithVerticalAlignment(VerticalAlignment.Fill)
             .WithBorderStyle(BorderStyle.None)
@@ -30,10 +40,12 @@ public class DetailPanel
             .WithMargin(1, 0, 0, 0)
             .Build();
         _panel.AddControl(_info);
+        _panel.AddControl(_image);
     }
 
     public void ShowFolder(string path)
     {
+        HideImage();
         var lines = new List<string>();
         DirectoryInfo? dir = null;
         try { dir = new DirectoryInfo(path); } catch { }
@@ -67,6 +79,7 @@ public class DetailPanel
 
     public void ShowLoading(string name, string relativePath)
     {
+        HideImage();
         var lines = new List<string>
         {
             $"[bold]◦ {SharpConsoleUI.Parsing.MarkupParser.Escape(name)}[/]",
@@ -85,6 +98,7 @@ public class DetailPanel
     {
         if (entry == null)
         {
+            HideImage();
             _info.SetContent(new List<string> { "[dim]Nothing selected[/]" });
             return;
         }
@@ -107,7 +121,15 @@ public class DetailPanel
         if (entry.IsReadOnly) lines.Add("[dim]ReadOnly:[/] Yes");
         if (entry.IsSymlink) lines.Add("[dim]Symlink:[/]  Yes");
 
-        // Text file preview
+        if (!entry.IsDirectory && IsImageFile(entry.Extension))
+        {
+            _info.SetContent(lines);
+            ShowImagePreview(entry.FullPath);
+            return;
+        }
+
+        HideImage();
+
         if (!entry.IsDirectory && IsTextFile(entry.Extension))
         {
             lines.Add("");
@@ -122,6 +144,36 @@ public class DetailPanel
 
         _info.SetContent(lines);
     }
+
+    private void ShowImagePreview(string path)
+    {
+        try
+        {
+            var pixels = PixelBuffer.FromFile(path);
+            _image.Source = pixels;
+            _image.Visible = true;
+        }
+        catch
+        {
+            HideImage();
+        }
+    }
+
+    private void HideImage()
+    {
+        if (_image.Visible)
+        {
+            _image.Source = null;
+            _image.Visible = false;
+        }
+    }
+
+    private static bool IsImageFile(string? ext) => ext?.ToLowerInvariant() switch
+    {
+        ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or
+        ".tga" or ".tiff" or ".tif" or ".pbm" => true,
+        _ => false
+    };
 
     private static bool IsTextFile(string? ext) => ext?.ToLowerInvariant() switch
     {

@@ -59,7 +59,7 @@ public class OptionsModal : ModalBase<bool>
     {
         var nav = Controls.NavigationView()
             .WithNavWidth(18)
-            .WithExpandedThreshold(40)
+            .WithExpandedThreshold(55)
             .WithPaneHeader("[bold cyan]Options[/]")
             .WithContentBorder(BorderStyle.Rounded)
             .WithContentBorderColor(new Color(60, 60, 80))

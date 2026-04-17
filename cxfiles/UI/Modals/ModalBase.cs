@@ -63,6 +63,7 @@ public abstract class ModalBase<TResult>
             .WithSize(GetWidth(), GetHeight())
             .Centered()
             .AsModal()
+            .Minimizable(false)
             .WithBorderStyle(BorderStyle.Rounded)
             .WithBorderColor(Color.Grey50)
             .OnKeyPressed((s, e) =>

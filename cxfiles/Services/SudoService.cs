@@ -36,8 +36,7 @@ public class SudoService
         if (!IsSupported)
             return (false, "Sudo is not supported on Windows. Run as Administrator.");
 
-        var args = password != null ? $"-S -- {command}" : $"-- {command}";
-        var psi = new ProcessStartInfo("sudo", args)
+        var psi = new ProcessStartInfo("sudo")
         {
             RedirectStandardInput = password != null,
             RedirectStandardOutput = true,
@@ -45,6 +44,11 @@ public class SudoService
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        if (password != null) psi.ArgumentList.Add("-S");
+        psi.ArgumentList.Add("--");
+        psi.ArgumentList.Add("sh");
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(command);
 
         try
         {
@@ -54,7 +58,8 @@ public class SudoService
 
             if (password != null)
             {
-                await process.StandardInput.WriteLineAsync(password.AsMemory(), ct);
+                await process.StandardInput.WriteAsync(password + "\n");
+                await process.StandardInput.FlushAsync(ct);
                 process.StandardInput.Close();
             }
 
@@ -89,6 +94,24 @@ public class SudoService
         string source, string dest, string? password, CancellationToken ct)
     {
         return ExecuteAsync($"cp -a '{EscapePath(source)}' '{EscapePath(dest)}'", password, ct);
+    }
+
+    public Task<(bool Success, string? Error)> RenameAsync(
+        string oldPath, string newPath, string? password, CancellationToken ct)
+    {
+        return ExecuteAsync($"mv '{EscapePath(oldPath)}' '{EscapePath(newPath)}'", password, ct);
+    }
+
+    public Task<(bool Success, string? Error)> CreateDirectoryAsync(
+        string path, string? password, CancellationToken ct)
+    {
+        return ExecuteAsync($"mkdir -p '{EscapePath(path)}'", password, ct);
+    }
+
+    public Task<(bool Success, string? Error)> CreateFileAsync(
+        string path, string? password, CancellationToken ct)
+    {
+        return ExecuteAsync($"touch '{EscapePath(path)}'", password, ct);
     }
 
     private static string EscapePath(string path) => path.Replace("'", "'\\''");

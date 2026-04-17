@@ -57,16 +57,17 @@ public class StatusLine
     }
 
     public void Update(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
-        int activeOps = 0, int totalOps = 0, int clipboardCount = 0, string? clipboardAction = null,
+        int activeOps = 0, int totalOps = 0, int failedOps = 0,
+        int clipboardCount = 0, string? clipboardAction = null,
         bool terminalOpen = false, bool terminalInMiddle = false)
     {
         _lastRender = () => Render(itemCount, selectedCount, detailVisible, showHidden,
-            activeOps, totalOps, clipboardCount, clipboardAction, terminalOpen, terminalInMiddle);
+            activeOps, totalOps, failedOps, clipboardCount, clipboardAction, terminalOpen, terminalInMiddle);
         _lastRender();
     }
 
     private void Render(int itemCount, int selectedCount, bool detailVisible, bool showHidden,
-        int activeOps, int totalOps, int clipboardCount, string? clipboardAction,
+        int activeOps, int totalOps, int failedOps, int clipboardCount, string? clipboardAction,
         bool terminalOpen, bool terminalInMiddle)
     {
         _bar.BatchUpdate(() =>
@@ -101,6 +102,12 @@ public class StatusLine
             {
                 _bar.AddLeftSeparator();
                 _bar.AddLeftText($"[yellow]⟳ {activeOps} running[/] [grey50]^P[/]",
+                    () => OperationsClicked?.Invoke());
+            }
+            else if (failedOps > 0)
+            {
+                _bar.AddLeftSeparator();
+                _bar.AddLeftText($"[red]✕ {failedOps} failed[/] [grey50]^P[/]",
                     () => OperationsClicked?.Invoke());
             }
             else if (totalOps > 0)

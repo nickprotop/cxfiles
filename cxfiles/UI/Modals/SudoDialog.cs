@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
@@ -9,6 +10,8 @@ namespace CXFiles.UI.Modals;
 public static class SudoDialog
 {
     public static bool IsOpen { get; private set; }
+
+    public static bool IsSupported => !RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 
     public class SudoResult
     {

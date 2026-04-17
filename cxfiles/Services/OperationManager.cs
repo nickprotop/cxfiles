@@ -57,6 +57,11 @@ public class OperationManager
         get { lock (_lock) return _operations.Count; }
     }
 
+    public int FailedCount
+    {
+        get { lock (_lock) return _operations.Count(o => o.Status == OperationStatus.Failed); }
+    }
+
     public IReadOnlyList<FileOperation> RunningOperations
     {
         get { lock (_lock) return _operations.Where(o => o.Status == OperationStatus.Running).ToList(); }

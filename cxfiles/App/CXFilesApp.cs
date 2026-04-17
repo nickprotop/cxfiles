@@ -528,6 +528,7 @@ public partial class CXFilesApp
             _config.Config.ShowHiddenFiles,
             _operations.ActiveCount,
             _operations.TotalCount,
+            _operations.FailedCount,
             _clipboard.HasContent ? _clipboard.Paths.Count : 0,
             _clipboard.HasContent ? (_clipboard.Action == Services.ClipboardAction.Cut ? "Cut" : "Copy") : null,
             _terminal != null,

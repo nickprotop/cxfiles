@@ -662,7 +662,7 @@ public partial class CXFilesApp
             await _trash.RestoreAsync(entry.TrashedName, CancellationToken.None);
             _operations.CompleteOperation(op, Services.OperationStatus.Completed);
         }
-        catch (UnauthorizedAccessException) when (_sudo.IsSupported)
+        catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
         {
             _operations.RemoveOperation(op);
             PromptSudoRestore(entry);

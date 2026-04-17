@@ -225,10 +225,13 @@ public partial class CXFilesApp
 
     private async Task ShowOptionsAsync()
     {
-        var changed = await UI.Modals.OptionsModal.ShowAsync(_ws, _config, _mainWindow);
-        foreach (var t in _tabs)
-            t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
-        Refresh();
+        var saved = await UI.Modals.OptionsModal.ShowAsync(_ws, _config, _mainWindow);
+        if (saved)
+        {
+            foreach (var t in _tabs)
+                t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+            Refresh();
+        }
     }
 
     private async Task DeleteSelectedAsync()
@@ -277,7 +280,7 @@ public partial class CXFilesApp
             {
                 _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported)
+            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
             {
                 if (useTrash)
                 {
@@ -370,7 +373,7 @@ public partial class CXFilesApp
                 _fs.Rename(entry.FullPath, newName);
                 Refresh();
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported)
+            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
             {
                 var desc = $"Rename \"{entry.Name}\" to \"{newName}\" in {Path.GetDirectoryName(entry.FullPath)}\n\nThis requires elevated privileges (sudo mv).";
                 var capturedPath = entry.FullPath;
@@ -455,7 +458,7 @@ public partial class CXFilesApp
             {
                 _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported)
+            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
             {
                 _operations.RemoveOperation(op);
                 var sudoPaths = paths;
@@ -551,7 +554,7 @@ public partial class CXFilesApp
                     _fs.CreateFile(path);
                 Refresh();
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported)
+            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
             {
                 var type = isDir ? "folder" : "file";
                 var cmd = isDir ? "sudo mkdir" : "sudo touch";

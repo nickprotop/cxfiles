@@ -12,6 +12,7 @@ public class CXFilesConfig
     public bool SyncTreeToTab { get; set; } = true;
     public bool AutoSelectFirstItem { get; set; } = false;
     public string EditorCommand { get; set; } = "";
+    public bool AllowSudoElevation { get; set; } = false;
 }
 
 public interface IConfigService

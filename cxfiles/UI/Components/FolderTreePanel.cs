@@ -65,10 +65,10 @@ public class FolderTreePanel
         var drives = _fs.GetDrives();
         foreach (var drive in drives)
         {
-            var label = string.IsNullOrEmpty(drive.Label)
+            var name = string.IsNullOrEmpty(drive.Label)
                 ? drive.RootPath
                 : $"{drive.Label} ({drive.RootPath})";
-            var node = _tree.AddRootNode($"[cyan]{label}[/]");
+            var node = _tree.AddRootNode($"[cyan]{drive.Icon} {SharpConsoleUI.Parsing.MarkupParser.Escape(name)}[/]");
             node.Tag = drive.RootPath;
             node.IsExpanded = false;
             AddPlaceholderIfNeeded(node, drive.RootPath);

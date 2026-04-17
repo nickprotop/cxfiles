@@ -11,6 +11,14 @@ public record DriveEntry(
     public string DisplayFree => FormatSize(FreeSpace);
     public string DisplayTotal => FormatSize(TotalSize);
 
+    public string Icon => DriveType switch
+    {
+        "Network" => "🌐",
+        "CDRom" => "💿",
+        "Removable" => "🔌",
+        _ => "💾"
+    };
+
     private static string FormatSize(long bytes) => bytes switch
     {
         < 1024 => $"{bytes}B",

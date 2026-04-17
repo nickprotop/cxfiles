@@ -11,6 +11,7 @@ public class FileSystemService : IFileSystemService
         foreach (var d in DriveInfo.GetDrives())
         {
             if (!d.IsReady) continue;
+            if (!OperatingSystem.IsWindows() && !ShouldShowDrive(d)) continue;
             try
             {
                 result.Add(new DriveEntry(
@@ -24,6 +25,26 @@ public class FileSystemService : IFileSystemService
             catch { }
         }
         return result;
+    }
+
+    private static bool ShouldShowDrive(DriveInfo d)
+    {
+        var path = d.RootDirectory.FullName;
+
+        if (path == "/") return true;
+        if (path == "/home" || path == "/home/") return true;
+
+        if (IsBlacklistedVirtualFs(path)) return false;
+        if (path.StartsWith("/boot", StringComparison.Ordinal)) return false;
+
+        if (path.StartsWith("/media/", StringComparison.Ordinal)) return true;
+        if (path.StartsWith("/mnt/", StringComparison.Ordinal)) return true;
+
+        if (d.DriveType == DriveType.Network) return true;
+        if (d.DriveType == DriveType.Removable) return true;
+        if (d.DriveType == DriveType.CDRom) return true;
+
+        return false;
     }
 
     public IReadOnlyList<FileEntry> ListDirectory(string path)

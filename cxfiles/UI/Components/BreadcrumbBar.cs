@@ -22,6 +22,7 @@ public class BreadcrumbBar
             .AddLeftText("[cyan1]◈ cxfiles[/]")
             .Build();
         _left.SeparatorChar = "\u203a";
+        _left.ItemSpacing = 1;
         _left.BackgroundColor = Color.Transparent;
         _left.HorizontalAlignment = HorizontalAlignment.Left;
         _left.Margin = new Margin(1, 0, 0, 0);
@@ -75,7 +76,7 @@ public class BreadcrumbBar
         _left.ClearAll();
 
         var root = Path.GetPathRoot(path) ?? "/";
-        _left.AddLeftText("[cyan1]◈ cxfiles[/]", () => SegmentClicked?.Invoke(root));
+        _left.AddLeftText("[underline cyan1]◈ cxfiles[/]", () => SegmentClicked?.Invoke(root));
 
         var parts = path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         var accumulated = root;
@@ -90,7 +91,7 @@ public class BreadcrumbBar
             if (i == parts.Length - 1)
                 _left.AddLeftText($"[bold]{parts[i]}[/]");
             else
-                _left.AddLeftText(parts[i], () => SegmentClicked?.Invoke(clickPath));
+                _left.AddLeftText($"[underline]{parts[i]}[/]", () => SegmentClicked?.Invoke(clickPath));
         }
     }
 }

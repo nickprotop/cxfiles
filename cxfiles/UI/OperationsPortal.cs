@@ -29,7 +29,7 @@ internal class OperationsPortal : PortalContentContainer
     public event EventHandler? Dismissed;
 
     public OperationsPortal(ConsoleWindowSystem ws, OperationManager operations,
-        int anchorX, int anchorY, int windowWidth, int windowHeight)
+        int anchorX, int anchorY, Window window)
     {
         _ws = ws;
         _operations = operations;
@@ -71,13 +71,18 @@ internal class OperationsPortal : PortalContentContainer
 
         _operations.OperationsChanged += OnOperationsChanged;
 
+        int bufferW = window.Width - 2;
+        int bufferH = window.Height - 2;
+        int bufX = anchorX - window.Left - 1;
+        int bufY = anchorY - window.Top - 1;
+
         int popupW = 50;
         int popupH = Math.Max(8, Math.Min(operations.TotalCount * 4 + 6, 22));
 
         var pos = PortalPositioner.CalculateFromPoint(
-            new Point(anchorX, anchorY),
+            new Point(bufX, bufY),
             new System.Drawing.Size(popupW, popupH),
-            new Rectangle(1, 1, windowWidth - 2, windowHeight - 2),
+            new Rectangle(0, 0, bufferW, bufferH),
             PortalPlacement.AboveOrBelow,
             new System.Drawing.Size(16, 3));
         PortalBounds = pos.Bounds;

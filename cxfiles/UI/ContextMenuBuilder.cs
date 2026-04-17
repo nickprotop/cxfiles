@@ -109,6 +109,8 @@ public class ContextMenuBuilder
             new("Delete", "Del", () => OnDelete?.Invoke()),
             new("-"),
             new("Refresh", "F5", () => OnRefresh?.Invoke()),
+            new("-"),
+            new("Properties", "F4", () => OnProperties?.Invoke()),
         });
 
         ShowPortal(items, window, owner, screenX, screenY);
@@ -117,7 +119,7 @@ public class ContextMenuBuilder
     private void ShowPortal(List<ContextMenuItem> items, Window window,
         IWindowControl owner, int screenX, int screenY)
     {
-        var portal = new ContextMenuPortal(items, screenX, screenY, window.Width, window.Height);
+        var portal = new ContextMenuPortal(items, screenX, screenY, window);
         portal.Container = window;
         _portal = portal;
         _portalOwner = owner;

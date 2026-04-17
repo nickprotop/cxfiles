@@ -25,7 +25,7 @@ internal class ClipboardPortal : PortalContentContainer
     public event Action<string>? RemoveRequested;
 
     public ClipboardPortal(ClipboardState clipboard, int anchorX, int anchorY,
-        int windowWidth, int windowHeight)
+        Window window)
     {
         _clipboard = clipboard;
 
@@ -71,13 +71,18 @@ internal class ClipboardPortal : PortalContentContainer
         footer.AddRightText("[dim]Clear All[/]", () => ClearRequested?.Invoke(this, EventArgs.Empty));
         AddChild(footer);
 
+        int bufferW = window.Width - 2;
+        int bufferH = window.Height - 2;
+        int bufX = anchorX - window.Left - 1;
+        int bufY = anchorY - window.Top - 1;
+
         int popupW = 50;
         int popupH = Math.Max(6, Math.Min(clipboard.Paths.Count + 5, 18));
 
         var pos = PortalPositioner.CalculateFromPoint(
-            new Point(anchorX, anchorY),
+            new Point(bufX, bufY),
             new System.Drawing.Size(popupW, popupH),
-            new Rectangle(1, 1, windowWidth - 2, windowHeight - 2),
+            new Rectangle(0, 0, bufferW, bufferH),
             PortalPlacement.AboveOrBelow,
             new System.Drawing.Size(16, 3));
         PortalBounds = pos.Bounds;

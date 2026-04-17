@@ -29,7 +29,7 @@ public partial class CXFilesApp
             .Build();
 
         // Folder tree (left panel)
-        _folderTree = new FolderTreePanel(_fs);
+        _folderTree = new FolderTreePanel(_fs, _config.Config.ShowHiddenFiles);
         _folderTree.FolderSelected += path => NavigateTo(path);
         _folderTree.LoadRoots();
 
@@ -99,6 +99,7 @@ public partial class CXFilesApp
             _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
             foreach (var t in _tabs)
                 t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+            _folderTree.SetShowHidden(_config.Config.ShowHiddenFiles);
             _config.Save();
             UpdateStatusLine();
         };
@@ -162,15 +163,19 @@ public partial class CXFilesApp
         _mainGrid = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
             .WithVerticalAlignment(VerticalAlignment.Fill)
-            .Column(col => col.Width(25).Add(_treeHeader).Add(_folderTree.Control))
+            .Column(col => col.Width(_config.Config.TreePanelWidth).Add(_treeHeader).Add(_folderTree.Control))
             .Column(col => col.Flex(1).Add(_tabControl))
-            .Column(col => col.Width(30).Add(_rightPanelTabs))
+            .Column(col => col.Width(_config.Config.DetailPanelWidth).Add(_rightPanelTabs))
             .WithSplitterAfter(0)
             .WithSplitterAfter(1)
             .Build();
 
         foreach (var splitter in _mainGrid.Splitters)
             splitter.ForegroundColor = Color.Grey27;
+
+        // Persist column widths when splitters are moved
+        foreach (var splitter in _mainGrid.Splitters)
+            splitter.SplitterMoved += (_, _) => SaveColumnWidths();
 
         // Apply initial visibility for detail panel
         if (!_detailVisible)
@@ -253,14 +258,13 @@ public partial class CXFilesApp
         };
 
         // Right-click on folder tree opens folder context menu
-        _folderTree.FolderRightClicked += path =>
+        _folderTree.FolderRightClicked += (path, args) =>
         {
             if (_mainWindow != null)
             {
-                var node = _folderTree.Control.SelectedNode;
-                var pos = _folderTree.Control.SelectedIndex;
                 _contextMenu.ShowForFolder(path, _mainWindow, _folderTree.Control,
-                    3, pos + 2, NavigateTo, _clipboard.HasContent);
+                    args.AbsolutePosition.X, args.AbsolutePosition.Y,
+                    NavigateTo, _clipboard.HasContent);
             }
         };
     }

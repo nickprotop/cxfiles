@@ -53,6 +53,7 @@ public class FileListPanel
             .WithHorizontalScrollbar(ScrollbarVisibility.Auto)
             .Build();
         _table.TruncationFade = true;
+        _table.HoverEnabled = false;
         _table.VerticalAlignment = VerticalAlignment.Fill;
         _table.HorizontalAlignment = HorizontalAlignment.Stretch;
         _table.ClearSelectionOnEmptyClick = true;

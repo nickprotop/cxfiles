@@ -1,6 +1,7 @@
 using SharpConsoleUI;
 using SharpConsoleUI.Builders;
 using SharpConsoleUI.Controls;
+using SharpConsoleUI.Events;
 using SharpConsoleUI.Layout;
 using CXFiles.Services;
 
@@ -12,13 +13,18 @@ public class FolderTreePanel
     private readonly TreeControl _tree;
     private const string PlaceholderTag = "__placeholder__";
 
-    public TreeControl Control => _tree;
-    public event Action<string>? FolderSelected;
-    public event Action<string>? FolderRightClicked;
+    private bool _showHidden;
+    private bool _navigatingFromTree;
 
-    public FolderTreePanel(IFileSystemService fs)
+    public TreeControl Control => _tree;
+    public bool NavigatingFromTree => _navigatingFromTree;
+    public event Action<string>? FolderSelected;
+    public event Action<string, MouseEventArgs>? FolderRightClicked;
+
+    public FolderTreePanel(IFileSystemService fs, bool showHidden = false)
     {
         _fs = fs;
+        _showHidden = showHidden;
         _tree = Controls.Tree()
             .WithGuide(TreeGuide.Line)
             .WithHighlightColors(Color.White, new Color(40, 60, 100))
@@ -26,12 +32,16 @@ public class FolderTreePanel
             .WithScrollbarVisibility(ScrollbarVisibility.Auto)
             .Build();
         _tree.VerticalAlignment = VerticalAlignment.Fill;
-        _tree.SelectOnRightClick = true;
+        _tree.HoverEnabled = false;
 
         _tree.SelectedNodeChanged += (_, e) =>
         {
             if (e?.Node?.Tag is string path && path != PlaceholderTag && _fs.DirectoryExists(path))
-                FolderSelected?.Invoke(path);
+            {
+                _navigatingFromTree = true;
+                try { FolderSelected?.Invoke(path); }
+                finally { _navigatingFromTree = false; }
+            }
         };
 
         _tree.NodeExpandCollapse += (_, e) =>
@@ -43,9 +53,9 @@ public class FolderTreePanel
 
         _tree.MouseRightClick += (_, args) =>
         {
-            var node = _tree.SelectedNode;
+            var node = _tree.LastRightClickedNode;
             if (node?.Tag is string path)
-                FolderRightClicked?.Invoke(path);
+                FolderRightClicked?.Invoke(path, args);
         };
     }
 
@@ -65,7 +75,7 @@ public class FolderTreePanel
         }
     }
 
-    public void ExpandToPath(string targetPath)
+    public void ExpandToPath(string targetPath, bool expandTarget = false)
     {
         var normalized = Path.GetFullPath(targetPath);
         var segments = BuildPathSegments(normalized);
@@ -87,10 +97,14 @@ public class FolderTreePanel
 
             if (match == null) break;
 
-            if (!match.IsExpanded)
+            bool isLastSegment = segment == segments[^1];
+            if (!isLastSegment || expandTarget)
             {
-                match.IsExpanded = true;
-                LazyLoadChildren(match);
+                if (!match.IsExpanded)
+                {
+                    match.IsExpanded = true;
+                    LazyLoadChildren(match);
+                }
             }
             current = match;
         }
@@ -127,6 +141,13 @@ public class FolderTreePanel
         }
     }
 
+    public void SetShowHidden(bool show)
+    {
+        if (_showHidden == show) return;
+        _showHidden = show;
+        Refresh();
+    }
+
     public void Refresh()
     {
         var selectedPath = _tree.SelectedNode?.Tag as string;
@@ -151,7 +172,7 @@ public class FolderTreePanel
         try
         {
             var dirs = _fs.ListDirectory(path)
-                .Where(e => e.IsDirectory && !e.IsHidden)
+                .Where(e => e.IsDirectory && (_showHidden || !e.IsHidden))
                 .OrderBy(e => e.Name)
                 .Take(500);
 

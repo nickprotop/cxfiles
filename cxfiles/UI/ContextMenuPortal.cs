@@ -29,7 +29,7 @@ internal class ContextMenuPortal : PortalContentContainer
     public event EventHandler? Dismissed;
 
     public ContextMenuPortal(List<ContextMenuItem> items, int anchorX, int anchorY,
-        int windowWidth, int windowHeight)
+        Window window)
     {
         _menu = new MenuControl
         {
@@ -90,10 +90,15 @@ internal class ContextMenuPortal : PortalContentContainer
         int popupW = Math.Clamp(contentW + 2, 16, 50);
         int popupH = items.Count + 2;
 
+        int bufferW = window.Width - 2;
+        int bufferH = window.Height - 2;
+        int bufX = anchorX - window.Left - 1;
+        int bufY = anchorY - window.Top - 1;
+
         var pos = PortalPositioner.CalculateFromPoint(
-            new Point(anchorX, anchorY),
+            new Point(bufX, bufY),
             new System.Drawing.Size(popupW, popupH),
-            new Rectangle(1, 1, windowWidth - 2, windowHeight - 2),
+            new Rectangle(0, 0, bufferW, bufferH),
             PortalPlacement.BelowOrAbove,
             new System.Drawing.Size(16, 3));
         PortalBounds = pos.Bounds;

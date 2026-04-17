@@ -157,7 +157,7 @@ public class OptionsModal : ModalBase<bool>
             .WithInput(_maxTabs.ToString())
             .WithInputWidth(5)
             .UnfocusOnEnter(false)
-            .OnEntered((_, text) =>
+            .OnInputChanged((_, text) =>
             {
                 if (int.TryParse(text, out var val) && val >= 1 && val <= 10)
                     _maxTabs = val;
@@ -176,7 +176,7 @@ public class OptionsModal : ModalBase<bool>
             .WithInput(_editorCommand)
             .WithInputWidth(30)
             .UnfocusOnEnter(false)
-            .OnEntered((_, text) => _editorCommand = text)
+            .OnInputChanged((_, text) => _editorCommand = text)
             .Build();
         panel.AddControl(editorPrompt);
     }
@@ -193,7 +193,7 @@ public class OptionsModal : ModalBase<bool>
             .WithInput(_defaultPath)
             .WithInputWidth(30)
             .UnfocusOnEnter(false)
-            .OnEntered((_, text) =>
+            .OnInputChanged((_, text) =>
             {
                 if (Directory.Exists(text))
                     _defaultPath = text;

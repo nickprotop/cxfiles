@@ -143,8 +143,8 @@ public partial class CXFilesApp
         _breadcrumb.Update(path);
         tab.FileList.Navigate(path);
         _tabControl.SetTabTitle(_tabControl.ActiveTabIndex, tab.TabTitle);
-        if (_config.Config.SyncTreeToTab)
-            _folderTree.ExpandToPath(path);
+        if (_config.Config.SyncTreeToTab && !_folderTree.NavigatingFromTree)
+            _folderTree.ExpandToPath(path, expandTarget: true);
         _detailPanel.ShowEntry(null);
         UpdateStatusLine();
         UpdateToolbar();
@@ -175,13 +175,16 @@ public partial class CXFilesApp
         WireSearchBar(tab);
         tab.FileList.FileActivated += entry =>
         {
-            // If a search is active on this tab, clear it before navigating.
-            if (tab.Search.Restore != null)
-                CancelAndRestore(tab);
             if (entry.IsDirectory)
+            {
+                if (tab.Search.Restore != null)
+                    CancelAndRestore(tab);
                 NavigateTo(entry.FullPath);
+            }
             else
+            {
                 _launcher.OpenWithDefault(entry.FullPath);
+            }
         };
         tab.FileList.SelectionChanged += info =>
         {
@@ -305,6 +308,7 @@ public partial class CXFilesApp
         }
 
         _config.Config.ShowDetailPanel = _detailVisible;
+        _config.Save();
         UpdateStatusLine();
         _mainWindow?.Invalidate(true);
     }
@@ -448,6 +452,19 @@ public partial class CXFilesApp
         UpdateStatusLine();
     }
 
+    private void SaveColumnWidths()
+    {
+        var columns = _mainGrid.Columns;
+        if (columns.Count >= 3)
+        {
+            if (columns[0].Width is int treeW)
+                _config.Config.TreePanelWidth = treeW;
+            if (columns[2].Width is int detailW)
+                _config.Config.DetailPanelWidth = detailW;
+            _config.Save();
+        }
+    }
+
     private void Refresh()
     {
         // If a search is active on the current tab, do NOT refresh the file list.
@@ -465,12 +482,12 @@ public partial class CXFilesApp
         if (_mainWindow == null) return;
         DismissOperationsPortal();
 
-        // Anchor at bottom-left of the status bar area
-        int anchorX = 2;
-        int anchorY = _mainWindow.Height - 3;
+        // Anchor at bottom-left of the status bar area (screen coords)
+        int anchorX = _mainWindow.Left + 2;
+        int anchorY = _mainWindow.Top + _mainWindow.Height - 3;
 
         _opsPortal = new UI.OperationsPortal(_ws, _operations, anchorX, anchorY,
-            _mainWindow.Width, _mainWindow.Height);
+            _mainWindow);
         _opsPortal.Container = _mainWindow;
         _opsPortalNode = _mainWindow.CreatePortal(_statusLine.Control, _opsPortal);
 
@@ -483,11 +500,11 @@ public partial class CXFilesApp
         if (_mainWindow == null || !_clipboard.HasContent) return;
         DismissClipboardPortal();
 
-        int anchorX = 2;
-        int anchorY = _mainWindow.Height - 3;
+        int anchorX = _mainWindow.Left + 2;
+        int anchorY = _mainWindow.Top + _mainWindow.Height - 3;
 
         _clipPortal = new UI.ClipboardPortal(_clipboard, anchorX, anchorY,
-            _mainWindow.Width, _mainWindow.Height);
+            _mainWindow);
         _clipPortal.Container = _mainWindow;
         _clipPortalNode = _mainWindow.CreatePortal(_statusLine.Control, _clipPortal);
 

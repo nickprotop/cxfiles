@@ -141,6 +141,7 @@ public partial class CXFilesApp
                 _config.Config.ShowHiddenFiles = !_config.Config.ShowHiddenFiles;
                 foreach (var t in _tabs)
                     t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+                _folderTree.SetShowHidden(_config.Config.ShowHiddenFiles);
                 _config.Save();
                 e.Handled = true;
                 break;
@@ -230,6 +231,7 @@ public partial class CXFilesApp
         {
             foreach (var t in _tabs)
                 t.FileList.SetShowHidden(_config.Config.ShowHiddenFiles);
+            _folderTree.SetShowHidden(_config.Config.ShowHiddenFiles);
             Refresh();
         }
     }

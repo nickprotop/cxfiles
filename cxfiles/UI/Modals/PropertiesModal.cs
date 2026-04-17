@@ -73,12 +73,22 @@ public class PropertiesModal : ModalBase<bool>
         checksums.ShowScrollbar = false;
         BuildChecksumsTab(checksums);
 
-        var tabs = Controls.TabControl()
+        var tabBuilder = Controls.TabControl()
             .WithHeaderStyle(TabHeaderStyle.Classic)
             .AddTab("General", general)
             .AddTab("Permissions", permissions)
             .AddTab("Space", space)
-            .AddTab("Checksums", checksums)
+            .AddTab("Checksums", checksums);
+
+        if (!_entry.IsDirectory && IsMediaFile(_entry.Extension))
+        {
+            var media = Controls.ScrollablePanel().WithBackgroundColor(Color.Transparent).Build();
+            media.ShowScrollbar = true;
+            BuildMediaTab(media);
+            tabBuilder = tabBuilder.AddTab("Media", media);
+        }
+
+        var tabs = tabBuilder
             .Fill()
             .Build();
         tabs.HorizontalAlignment = HorizontalAlignment.Stretch;
@@ -618,6 +628,162 @@ public class PropertiesModal : ModalBase<bool>
         progress.Value = total;
         return Convert.ToHexString(algo.Hash!).ToLowerInvariant();
     }
+
+    private void BuildMediaTab(ScrollablePanelControl panel)
+    {
+        var lines = new List<string>();
+
+        try
+        {
+            using var file = TagLib.File.Create(_entry.FullPath);
+            var props = file.Properties;
+            var tag = file.Tag;
+
+            // Technical properties
+            lines.Add("[bold]Technical[/]");
+            lines.Add("");
+
+            if (props.Duration.TotalSeconds > 0)
+            {
+                var d = props.Duration;
+                lines.Add(d.TotalHours >= 1
+                    ? $"[dim]Duration    :[/] {(int)d.TotalHours}:{d.Minutes:D2}:{d.Seconds:D2}"
+                    : $"[dim]Duration    :[/] {d.Minutes}:{d.Seconds:D2}");
+            }
+
+            if (props.VideoWidth > 0 && props.VideoHeight > 0)
+                lines.Add($"[dim]Resolution  :[/] {props.VideoWidth} x {props.VideoHeight}");
+
+            if (props.PhotoWidth > 0 && props.PhotoHeight > 0)
+                lines.Add($"[dim]Dimensions  :[/] {props.PhotoWidth} x {props.PhotoHeight}");
+
+            if (props.AudioBitrate > 0)
+                lines.Add($"[dim]Bitrate     :[/] {props.AudioBitrate} kbps");
+            if (props.AudioSampleRate > 0)
+                lines.Add($"[dim]Sample Rate :[/] {props.AudioSampleRate} Hz");
+            if (props.AudioChannels > 0)
+                lines.Add($"[dim]Channels    :[/] {(props.AudioChannels == 1 ? "Mono" : props.AudioChannels == 2 ? "Stereo" : $"{props.AudioChannels}")}");
+            if (props.BitsPerSample > 0)
+                lines.Add($"[dim]Bit Depth   :[/] {props.BitsPerSample} bit");
+            if (props.PhotoQuality > 0)
+                lines.Add($"[dim]Quality     :[/] {props.PhotoQuality}");
+
+            foreach (var codec in props.Codecs)
+            {
+                if (codec is TagLib.IVideoCodec vc)
+                    lines.Add($"[dim]Video Codec :[/] {Esc(vc.Description)}");
+                else if (codec is TagLib.IAudioCodec ac)
+                    lines.Add($"[dim]Audio Codec :[/] {Esc(ac.Description)}");
+            }
+
+            // Tags
+            bool hasTag = !string.IsNullOrWhiteSpace(tag.Title)
+                || !string.IsNullOrWhiteSpace(tag.JoinedPerformers)
+                || !string.IsNullOrWhiteSpace(tag.Album)
+                || tag.Year > 0;
+
+            if (hasTag)
+            {
+                lines.Add("");
+                lines.Add("[bold]Tags[/]");
+                lines.Add("");
+
+                if (!string.IsNullOrWhiteSpace(tag.Title))
+                    lines.Add($"[dim]Title       :[/] {Esc(tag.Title)}");
+                if (!string.IsNullOrWhiteSpace(tag.JoinedPerformers))
+                    lines.Add($"[dim]Artist      :[/] {Esc(tag.JoinedPerformers)}");
+                if (!string.IsNullOrWhiteSpace(tag.JoinedAlbumArtists))
+                    lines.Add($"[dim]Album Artist:[/] {Esc(tag.JoinedAlbumArtists)}");
+                if (!string.IsNullOrWhiteSpace(tag.Album))
+                    lines.Add($"[dim]Album       :[/] {Esc(tag.Album)}");
+                if (tag.Year > 0)
+                    lines.Add($"[dim]Year        :[/] {tag.Year}");
+                if (tag.Track > 0)
+                    lines.Add(tag.TrackCount > 0
+                        ? $"[dim]Track       :[/] {tag.Track} / {tag.TrackCount}"
+                        : $"[dim]Track       :[/] {tag.Track}");
+                if (tag.Disc > 0)
+                    lines.Add(tag.DiscCount > 0
+                        ? $"[dim]Disc        :[/] {tag.Disc} / {tag.DiscCount}"
+                        : $"[dim]Disc        :[/] {tag.Disc}");
+                if (!string.IsNullOrWhiteSpace(tag.JoinedGenres))
+                    lines.Add($"[dim]Genre       :[/] {Esc(tag.JoinedGenres)}");
+                if (!string.IsNullOrWhiteSpace(tag.JoinedComposers))
+                    lines.Add($"[dim]Composer    :[/] {Esc(tag.JoinedComposers)}");
+                if (!string.IsNullOrWhiteSpace(tag.Conductor))
+                    lines.Add($"[dim]Conductor   :[/] {Esc(tag.Conductor)}");
+                if (tag.BeatsPerMinute > 0)
+                    lines.Add($"[dim]BPM         :[/] {tag.BeatsPerMinute}");
+                if (!string.IsNullOrWhiteSpace(tag.Copyright))
+                    lines.Add($"[dim]Copyright   :[/] {Esc(tag.Copyright)}");
+                if (!string.IsNullOrWhiteSpace(tag.Comment))
+                    lines.Add($"[dim]Comment     :[/] {Esc(tag.Comment)}");
+            }
+
+            // EXIF (images)
+            if (file.TagTypes.HasFlag(TagLib.TagTypes.XMP) ||
+                file.TagTypes.HasFlag(TagLib.TagTypes.TiffIFD))
+            {
+                var imageTag = file.Tag as TagLib.Image.CombinedImageTag;
+                if (imageTag != null)
+                {
+                    lines.Add("");
+                    lines.Add("[bold]EXIF[/]");
+                    lines.Add("");
+
+                    if (!string.IsNullOrWhiteSpace(imageTag.Make))
+                        lines.Add($"[dim]Camera Make :[/] {Esc(imageTag.Make)}");
+                    if (!string.IsNullOrWhiteSpace(imageTag.Model))
+                        lines.Add($"[dim]Camera Model:[/] {Esc(imageTag.Model)}");
+                    if (imageTag.FocalLength.HasValue)
+                        lines.Add($"[dim]Focal Length:[/] {imageTag.FocalLength:F1} mm");
+                    if (imageTag.FNumber.HasValue)
+                        lines.Add($"[dim]Aperture    :[/] f/{imageTag.FNumber:F1}");
+                    if (imageTag.ExposureTime.HasValue)
+                    {
+                        var et = imageTag.ExposureTime.Value;
+                        lines.Add(et >= 1
+                            ? $"[dim]Exposure    :[/] {et:F1}s"
+                            : $"[dim]Exposure    :[/] 1/{1.0 / et:F0}s");
+                    }
+                    if (imageTag.ISOSpeedRatings.HasValue)
+                        lines.Add($"[dim]ISO         :[/] {imageTag.ISOSpeedRatings}");
+                    if (imageTag.DateTime.HasValue)
+                        lines.Add($"[dim]Date Taken  :[/] {imageTag.DateTime:yyyy-MM-dd HH:mm:ss}");
+                    if (!string.IsNullOrWhiteSpace(imageTag.Software))
+                        lines.Add($"[dim]Software    :[/] {Esc(imageTag.Software)}");
+                    if (imageTag.Latitude.HasValue && imageTag.Longitude.HasValue)
+                        lines.Add($"[dim]GPS         :[/] {imageTag.Latitude:F6}, {imageTag.Longitude:F6}");
+                    if (imageTag.Orientation != TagLib.Image.ImageOrientation.None)
+                        lines.Add($"[dim]Orientation :[/] {imageTag.Orientation}");
+                    if (!string.IsNullOrWhiteSpace(imageTag.Creator))
+                        lines.Add($"[dim]Creator     :[/] {Esc(imageTag.Creator)}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            lines.Add($"[red]Unable to read metadata: {Esc(ex.Message)}[/]");
+        }
+
+        if (lines.Count == 0)
+            lines.Add("[dim]No media metadata available.[/]");
+
+        panel.AddControl(Controls.Markup().AddLines(lines.ToArray()).WithMargin(1, 0, 1, 0).Build());
+    }
+
+    private static string Esc(string text) => SharpConsoleUI.Parsing.MarkupParser.Escape(text);
+
+    private static bool IsMediaFile(string? ext) => ext?.ToLowerInvariant() switch
+    {
+        ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or
+        ".tga" or ".tiff" or ".tif" or ".pbm" or
+        ".mp3" or ".flac" or ".ogg" or ".opus" or ".wav" or ".aac" or ".wma" or
+        ".m4a" or ".aiff" or ".ape" or
+        ".mp4" or ".mkv" or ".avi" or ".mov" or ".wmv" or ".webm" or ".flv" or
+        ".m4v" or ".3gp" => true,
+        _ => false
+    };
 
     // --- Helpers ---
 

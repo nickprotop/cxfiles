@@ -123,14 +123,17 @@ public class DetailPanel
 
         if (!entry.IsDirectory && IsImageFile(entry.Extension))
         {
-            _info.SetContent(lines);
-            ShowImagePreview(entry.FullPath);
+            ShowImagePreview(entry.FullPath, lines);
             return;
         }
 
         HideImage();
 
-        if (!entry.IsDirectory && IsTextFile(entry.Extension))
+        if (!entry.IsDirectory && IsMediaFile(entry.Extension))
+        {
+            AppendMediaMetadata(lines, entry.FullPath);
+        }
+        else if (!entry.IsDirectory && IsTextFile(entry.Extension))
         {
             lines.Add("");
             lines.Add("[bold]Preview[/]");
@@ -145,18 +148,71 @@ public class DetailPanel
         _info.SetContent(lines);
     }
 
-    private void ShowImagePreview(string path)
+    private void ShowImagePreview(string path, List<string> lines)
     {
         try
         {
             var pixels = PixelBuffer.FromFile(path);
+            lines.Add($"[dim]Dimens:[/]  {pixels.Width} x {pixels.Height}");
+            _info.SetContent(lines);
             _image.Source = pixels;
             _image.Visible = true;
         }
         catch
         {
+            _info.SetContent(lines);
             HideImage();
         }
+    }
+
+    private void AppendMediaMetadata(List<string> lines, string path)
+    {
+        try
+        {
+            using var file = TagLib.File.Create(path);
+            var props = file.Properties;
+
+            if (props.Duration.TotalSeconds > 0)
+            {
+                var d = props.Duration;
+                lines.Add(d.TotalHours >= 1
+                    ? $"[dim]Duration:[/] {(int)d.TotalHours}:{d.Minutes:D2}:{d.Seconds:D2}"
+                    : $"[dim]Duration:[/] {d.Minutes}:{d.Seconds:D2}");
+            }
+
+            if (props.AudioBitrate > 0)
+                lines.Add($"[dim]Bitrate:[/]  {props.AudioBitrate} kbps");
+            if (props.AudioSampleRate > 0)
+                lines.Add($"[dim]Sample:[/]   {props.AudioSampleRate} Hz");
+            if (props.AudioChannels > 0)
+                lines.Add($"[dim]Channels:[/] {(props.AudioChannels == 1 ? "Mono" : props.AudioChannels == 2 ? "Stereo" : props.AudioChannels.ToString())}");
+
+            if (props.VideoWidth > 0 && props.VideoHeight > 0)
+                lines.Add($"[dim]Video:[/]    {props.VideoWidth} x {props.VideoHeight}");
+
+            var tag = file.Tag;
+            if (!string.IsNullOrWhiteSpace(tag.Title))
+                lines.Add($"[dim]Title:[/]    {SharpConsoleUI.Parsing.MarkupParser.Escape(tag.Title)}");
+            if (!string.IsNullOrWhiteSpace(tag.JoinedPerformers))
+                lines.Add($"[dim]Artist:[/]   {SharpConsoleUI.Parsing.MarkupParser.Escape(tag.JoinedPerformers)}");
+            if (!string.IsNullOrWhiteSpace(tag.Album))
+                lines.Add($"[dim]Album:[/]    {SharpConsoleUI.Parsing.MarkupParser.Escape(tag.Album)}");
+            if (tag.Year > 0)
+                lines.Add($"[dim]Year:[/]     {tag.Year}");
+            if (!string.IsNullOrWhiteSpace(tag.JoinedGenres))
+                lines.Add($"[dim]Genre:[/]    {SharpConsoleUI.Parsing.MarkupParser.Escape(tag.JoinedGenres)}");
+            if (tag.Track > 0)
+                lines.Add($"[dim]Track:[/]    {tag.Track}");
+
+            foreach (var codec in props.Codecs)
+            {
+                if (codec is TagLib.IVideoCodec vc)
+                    lines.Add($"[dim]VCodec:[/]   {SharpConsoleUI.Parsing.MarkupParser.Escape(vc.Description)}");
+                else if (codec is TagLib.IAudioCodec ac)
+                    lines.Add($"[dim]ACodec:[/]   {SharpConsoleUI.Parsing.MarkupParser.Escape(ac.Description)}");
+            }
+        }
+        catch { }
     }
 
     private void HideImage()
@@ -172,6 +228,15 @@ public class DetailPanel
     {
         ".png" or ".jpg" or ".jpeg" or ".gif" or ".bmp" or ".webp" or
         ".tga" or ".tiff" or ".tif" or ".pbm" => true,
+        _ => false
+    };
+
+    private static bool IsMediaFile(string? ext) => ext?.ToLowerInvariant() switch
+    {
+        ".mp3" or ".flac" or ".ogg" or ".opus" or ".wav" or ".aac" or ".wma" or
+        ".m4a" or ".aiff" or ".ape" or
+        ".mp4" or ".mkv" or ".avi" or ".mov" or ".wmv" or ".webm" or ".flv" or
+        ".m4v" or ".3gp" or ".ts" or ".mts" => true,
         _ => false
     };
 

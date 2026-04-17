@@ -21,7 +21,7 @@ public record FileEntry(
         string.IsNullOrEmpty(Extension) ? "File" :
         Extension.ToUpperInvariant().TrimStart('.') + " File";
 
-    public string Icon => IsDirectory ? (IsSymlink ? "↗" : "▸") :
+    public string Icon => IsDirectory ? (IsSymlink ? "↗" : "📁") :
         IsSymlink ? "↗" :
         Extension?.ToLowerInvariant() switch
         {

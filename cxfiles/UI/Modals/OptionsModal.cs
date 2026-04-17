@@ -44,7 +44,7 @@ public class OptionsModal : ModalBase<bool>
         => new OptionsModal(ws, config, parent).ShowAsync();
 
     protected override string GetTitle() => "Options";
-    protected override int GetWidth() => 60;
+    protected override int GetWidth() => 80;
     protected override int GetHeight() => 28;
     protected override bool GetDefaultResult() => false; // Cancel/Escape = no changes
 
@@ -59,6 +59,7 @@ public class OptionsModal : ModalBase<bool>
     {
         var nav = Controls.NavigationView()
             .WithNavWidth(18)
+            .WithExpandedThreshold(40)
             .WithPaneHeader("[bold cyan]Options[/]")
             .WithContentBorder(BorderStyle.Rounded)
             .WithContentBorderColor(new Color(60, 60, 80))
@@ -87,21 +88,6 @@ public class OptionsModal : ModalBase<bool>
         buttons.StickyPosition = StickyPosition.Bottom;
         buttons.Margin = new Margin(1, 0, 1, 0);
         Modal.AddControl(buttons);
-
-        Modal.AddControl(Controls.Markup()
-            .AddLine("[dim]Enter: Save  Esc: Cancel[/]")
-            .StickyBottom()
-            .WithMargin(1, 0, 1, 0)
-            .Build());
-
-        Modal.KeyPressed += (_, e) =>
-        {
-            if (e.KeyInfo.Key == ConsoleKey.Enter)
-            {
-                Save();
-                e.Handled = true;
-            }
-        };
     }
 
     private void Save()

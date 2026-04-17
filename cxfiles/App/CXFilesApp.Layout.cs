@@ -87,6 +87,7 @@ public partial class CXFilesApp
         _contextMenu.OnPaste += () => _ = PasteAsync();
         _contextMenu.OnNewItem += isDir => _ = NewItemAsync(isDir);
         _contextMenu.OnRefresh += Refresh;
+        _contextMenu.OnDismissed += () => _folderTree.ClearContextHighlight();
 
         // Detail panel (right panel)
         _detailPanel = new DetailPanel(_fs);
@@ -262,9 +263,9 @@ public partial class CXFilesApp
         {
             if (_mainWindow != null)
             {
+                var actions = BuildFolderActions(path);
                 _contextMenu.ShowForFolder(path, _mainWindow, _folderTree.Control,
-                    args.AbsolutePosition.X, args.AbsolutePosition.Y,
-                    NavigateTo, _clipboard.HasContent);
+                    args.AbsolutePosition.X, args.AbsolutePosition.Y, actions);
             }
         };
     }

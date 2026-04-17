@@ -15,6 +15,8 @@ public class FolderTreePanel
 
     private bool _showHidden;
     private bool _navigatingFromTree;
+    private TreeNode? _contextHighlightNode;
+    private string? _contextHighlightOriginalText;
 
     public TreeControl Control => _tree;
     public bool NavigatingFromTree => _navigatingFromTree;
@@ -53,9 +55,18 @@ public class FolderTreePanel
 
         _tree.MouseRightClick += (_, args) =>
         {
+            ClearContextHighlight();
             var node = _tree.LastRightClickedNode;
             if (node?.Tag is string path)
+            {
+                _contextHighlightNode = node;
+                _contextHighlightOriginalText = node.Text;
+                node.Text = node.Text
+                    .Replace("[cyan]", "[white on grey30]")
+                    .Replace("[dim]", "[dim on grey30]");
+                _tree.Container?.Invalidate(true);
                 FolderRightClicked?.Invoke(path, args);
+            }
         };
     }
 
@@ -138,6 +149,17 @@ public class FolderTreePanel
         {
             LazyLoadChildren(node);
             RestoreExpansion(node, expandedChildren);
+        }
+    }
+
+    public void ClearContextHighlight()
+    {
+        if (_contextHighlightNode != null && _contextHighlightOriginalText != null)
+        {
+            _contextHighlightNode.Text = _contextHighlightOriginalText;
+            _contextHighlightNode = null;
+            _contextHighlightOriginalText = null;
+            _tree.Container?.Invalidate(true);
         }
     }
 

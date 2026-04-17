@@ -452,6 +452,157 @@ public partial class CXFilesApp
         UpdateStatusLine();
     }
 
+    private UI.FolderMenuActions BuildFolderActions(string folderPath)
+    {
+        return new UI.FolderMenuActions(
+            Open: () => NavigateTo(folderPath),
+            Rename: () => _ = RenameFolderAsync(folderPath),
+            Delete: () => _ = DeletePathAsync(folderPath),
+            Properties: () => _ = ShowPropertiesForPathAsync(folderPath),
+            Copy: () =>
+            {
+                _clipboard.SetCopy(new[] { folderPath });
+                UpdateToolbar();
+                UpdateStatusLine();
+            },
+            Cut: () =>
+            {
+                _clipboard.SetCut(new[] { folderPath });
+                UpdateToolbar();
+                UpdateStatusLine();
+            },
+            Paste: () => _ = PasteIntoAsync(folderPath),
+            NewFolder: () => _ = NewItemInAsync(folderPath, true),
+            NewFile: () => _ = NewItemInAsync(folderPath, false),
+            Refresh: () =>
+            {
+                _folderTree.RefreshNode(_folderTree.Control.SelectedNode);
+                ActiveFileList.Refresh();
+                UpdateStatusLine();
+            },
+            HasClipboard: _clipboard.HasContent
+        );
+    }
+
+    private async Task RenameFolderAsync(string path)
+    {
+        var name = Path.GetFileName(path);
+        if (string.IsNullOrEmpty(name)) return;
+        var newName = await UI.Modals.RenameModal.ShowAsync(_ws, name, _mainWindow);
+        if (newName != null)
+        {
+            try
+            {
+                _fs.Rename(path, newName);
+                _folderTree.Refresh();
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                _ws.NotificationStateService.ShowNotification(
+                    "Error", $"Rename failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+            }
+        }
+    }
+
+    private async Task DeletePathAsync(string path)
+    {
+        var name = Path.GetFileName(path);
+        var isDir = _fs.DirectoryExists(path);
+        var type = isDir ? "folder" : "file";
+        var action = await UI.Modals.DeleteConfirmModal.ShowAsync(
+            _ws, $"Delete {type} \"{name}\"?", _trash.IsAvailable, _mainWindow);
+        if (action == UI.Modals.DeleteAction.Cancel) return;
+
+        bool useTrash = action == UI.Modals.DeleteAction.Trash;
+        try
+        {
+            if (useTrash)
+                await _trash.TrashAsync(path, CancellationToken.None);
+            else
+                await _fs.DeleteAsync(path, isDir, CancellationToken.None);
+            _folderTree.Refresh();
+            Refresh();
+        }
+        catch (Exception ex)
+        {
+            _ws.NotificationStateService.ShowNotification(
+                "Error", $"Delete failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+        }
+    }
+
+    private async Task ShowPropertiesForPathAsync(string path)
+    {
+        try
+        {
+            var entry = _fs.GetFileInfo(path);
+            await UI.Modals.PropertiesModal.ShowAsync(_ws, _fs, entry, _mainWindow);
+        }
+        catch { }
+    }
+
+    private async Task PasteIntoAsync(string targetFolder)
+    {
+        if (!_clipboard.HasContent) return;
+        var isCut = _clipboard.Action == Services.ClipboardAction.Cut;
+        var paths = _clipboard.Paths.ToList();
+        var opType = isCut ? Services.OperationType.Move : Services.OperationType.Copy;
+        var desc = $"{(isCut ? "Moving" : "Copying")} {paths.Count} item{(paths.Count == 1 ? "" : "s")} to {Path.GetFileName(targetFolder)}";
+        var op = _operations.StartOperation(opType, desc);
+        UpdateStatusLine();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                foreach (var src in paths)
+                {
+                    op.Cts.Token.ThrowIfCancellationRequested();
+                    op.CurrentFile = Path.GetFileName(src);
+                    var dest = Path.Combine(targetFolder, Path.GetFileName(src));
+                    if (isCut)
+                        await _fs.MoveAsync(src, dest, false, op.Cts.Token);
+                    else
+                        await _fs.CopyAsync(src, dest, false, null, op.Cts.Token);
+                }
+                _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                if (isCut) _clipboard.Clear();
+                _ws.EnqueueOnUIThread(() => { _folderTree.Refresh(); Refresh(); });
+            }
+            catch (OperationCanceledException)
+            {
+                _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+            }
+            catch (Exception ex)
+            {
+                _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+            }
+        });
+    }
+
+    private async Task NewItemInAsync(string parentFolder, bool isDirectory)
+    {
+        var result = await UI.Modals.NewItemModal.ShowAsync(_ws, isDirectory, _mainWindow);
+        if (result?.Name != null)
+        {
+            var path = Path.Combine(parentFolder, result.Name);
+            try
+            {
+                if (result.IsDirectory)
+                    _fs.CreateDirectory(path);
+                else
+                    _fs.CreateFile(path);
+                _folderTree.Refresh();
+                Refresh();
+            }
+            catch (Exception ex)
+            {
+                _ws.NotificationStateService.ShowNotification(
+                    "Error", $"Create failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+            }
+        }
+    }
+
     private void SaveColumnWidths()
     {
         var columns = _mainGrid.Columns;

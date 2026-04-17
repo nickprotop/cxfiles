@@ -6,6 +6,19 @@ using CXFiles.Services;
 
 namespace CXFiles.UI;
 
+public record FolderMenuActions(
+    Action? Open = null,
+    Action? Rename = null,
+    Action? Delete = null,
+    Action? Properties = null,
+    Action? Copy = null,
+    Action? Cut = null,
+    Action? Paste = null,
+    Action? NewFolder = null,
+    Action? NewFile = null,
+    Action? Refresh = null,
+    bool HasClipboard = false);
+
 public class ContextMenuBuilder
 {
     private ContextMenuPortal? _portal;
@@ -23,6 +36,8 @@ public class ContextMenuBuilder
     public event Action? OnRefresh;
     public event Action<FileEntry>? OnOpenInEditor;
     public event Action<string>? OnOpenTerminal;
+
+    public event Action? OnDismissed;
 
     public bool IsOpen => _portal != null;
 
@@ -45,6 +60,7 @@ public class ContextMenuBuilder
             _portalNode = null;
             _portal = null;
             _portalOwner = null;
+            OnDismissed?.Invoke();
         }
     }
 
@@ -86,31 +102,34 @@ public class ContextMenuBuilder
     }
 
     public void ShowForFolder(string folderPath, Window window, IWindowControl owner,
-        int screenX, int screenY, Action<string> onNavigate, bool hasClipboard)
+        int screenX, int screenY, FolderMenuActions actions)
     {
         Dismiss(window);
 
         var items = new List<ContextMenuItem>
         {
-            new("Open", "Enter", () => onNavigate(folderPath)),
+            new("Open", "Enter", () => actions.Open?.Invoke()),
             new("Open terminal here", "", () => OnOpenTerminal?.Invoke(folderPath)),
             new("-"),
-            new("New Folder", "^⇧N", () => OnNewItem?.Invoke(true)),
-            new("New File", "^N", () => OnNewItem?.Invoke(false)),
+            new("New Folder", "^⇧N", () => actions.NewFolder?.Invoke()),
+            new("New File", "^N", () => actions.NewFile?.Invoke()),
         };
 
-        if (hasClipboard)
-            items.Add(new("Paste", "^V", () => OnPaste?.Invoke()));
+        if (actions.HasClipboard)
+            items.Add(new("Paste", "^V", () => actions.Paste?.Invoke()));
 
         items.AddRange(new ContextMenuItem[]
         {
             new("-"),
-            new("Rename", "F2", () => OnRename?.Invoke()),
-            new("Delete", "Del", () => OnDelete?.Invoke()),
+            new("Copy", "^C", () => actions.Copy?.Invoke()),
+            new("Cut", "^X", () => actions.Cut?.Invoke()),
             new("-"),
-            new("Refresh", "F5", () => OnRefresh?.Invoke()),
+            new("Rename", "F2", () => actions.Rename?.Invoke()),
+            new("Delete", "Del", () => actions.Delete?.Invoke()),
             new("-"),
-            new("Properties", "F4", () => OnProperties?.Invoke()),
+            new("Refresh", "F5", () => actions.Refresh?.Invoke()),
+            new("-"),
+            new("Properties", "F4", () => actions.Properties?.Invoke()),
         });
 
         ShowPortal(items, window, owner, screenX, screenY);

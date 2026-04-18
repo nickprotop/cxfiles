@@ -17,7 +17,9 @@ public record FolderMenuActions(
     Action? NewFolder = null,
     Action? NewFile = null,
     Action? Refresh = null,
-    bool HasClipboard = false);
+    Action? AddToFavorites = null,
+    bool HasClipboard = false,
+    bool ShowAddToFavorites = true);
 
 public class ContextMenuBuilder
 {
@@ -36,6 +38,7 @@ public class ContextMenuBuilder
     public event Action? OnRefresh;
     public event Action<FileEntry>? OnOpenInEditor;
     public event Action<string>? OnOpenTerminal;
+    public event Action<FileEntry>? OnAddToFavorites;
 
     public event Action? OnDismissed;
 
@@ -65,7 +68,7 @@ public class ContextMenuBuilder
     }
 
     public void Show(FileEntry entry, Window window, IWindowControl owner,
-        int screenX, int screenY, bool hasClipboard)
+        int screenX, int screenY, bool hasClipboard, bool showAddToFavorites = false)
     {
         Dismiss(window);
 
@@ -85,6 +88,12 @@ public class ContextMenuBuilder
 
         if (hasClipboard)
             items.Add(new("Paste", "^V", () => OnPaste?.Invoke()));
+
+        if (entry.IsDirectory && showAddToFavorites)
+        {
+            items.Add(new("-"));
+            items.Add(new("Add to Favorites", "^D", () => OnAddToFavorites?.Invoke(entry)));
+        }
 
         items.AddRange(new ContextMenuItem[]
         {
@@ -118,6 +127,12 @@ public class ContextMenuBuilder
         if (actions.HasClipboard)
             items.Add(new("Paste", "^V", () => actions.Paste?.Invoke()));
 
+        if (actions.ShowAddToFavorites && actions.AddToFavorites != null)
+        {
+            items.Add(new("-"));
+            items.Add(new("Add to Favorites", "^D", () => actions.AddToFavorites?.Invoke()));
+        }
+
         items.AddRange(new ContextMenuItem[]
         {
             new("-"),
@@ -131,6 +146,22 @@ public class ContextMenuBuilder
             new("-"),
             new("Properties", "F4", () => actions.Properties?.Invoke()),
         });
+
+        ShowPortal(items, window, owner, screenX, screenY);
+    }
+
+    public void ShowForBookmark(string bookmarkPath, Window window, IWindowControl owner,
+        int screenX, int screenY, Action onOpen, Action onRename, Action onRemove)
+    {
+        Dismiss(window);
+
+        var items = new List<ContextMenuItem>
+        {
+            new("Open", "Enter", onOpen),
+            new("-"),
+            new("Rename", "F2", onRename),
+            new("Remove from Favorites", "Del", onRemove),
+        };
 
         ShowPortal(items, window, owner, screenX, screenY);
     }

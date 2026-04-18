@@ -17,11 +17,17 @@ public class FolderTreePanel
     private bool _navigatingFromTree;
     private TreeNode? _contextHighlightNode;
     private string? _contextHighlightOriginalText;
+    private readonly HashSet<TreeNode> _bookmarkNodes = new();
+    private List<CXFiles.Models.BookmarkEntry> _bookmarks = new();
+
+    public event Action<string, MouseEventArgs>? BookmarkRightClicked;
+    public event Action<CXFiles.Models.BookmarkEntry>? BookmarkDeletePressed;
 
     public TreeControl Control => _tree;
     public bool NavigatingFromTree => _navigatingFromTree;
     public event Action<string>? FolderSelected;
     public event Action<string, MouseEventArgs>? FolderRightClicked;
+    public event Action<string>? MissingBookmarkClicked;
 
     public FolderTreePanel(IFileSystemService fs, bool showHidden = false)
     {
@@ -38,7 +44,15 @@ public class FolderTreePanel
 
         _tree.SelectedNodeChanged += (_, e) =>
         {
-            if (e?.Node?.Tag is string path && path != PlaceholderTag && _fs.DirectoryExists(path))
+            if (e?.Node?.Tag is not string path || path == PlaceholderTag) return;
+
+            if (_bookmarkNodes.Contains(e.Node) && !_fs.DirectoryExists(path))
+            {
+                MissingBookmarkClicked?.Invoke(path);
+                return;
+            }
+
+            if (_fs.DirectoryExists(path))
             {
                 _navigatingFromTree = true;
                 try { FolderSelected?.Invoke(path); }
@@ -57,22 +71,47 @@ public class FolderTreePanel
         {
             ClearContextHighlight();
             var node = _tree.LastRightClickedNode;
-            if (node?.Tag is string path)
-            {
-                _contextHighlightNode = node;
-                _contextHighlightOriginalText = node.Text;
-                node.Text = node.Text
-                    .Replace("[cyan]", "[white on grey30]")
-                    .Replace("[dim]", "[dim on grey30]");
-                _tree.Container?.Invalidate(true);
+            if (node?.Tag is not string path) return;
+
+            _contextHighlightNode = node;
+            _contextHighlightOriginalText = node.Text;
+            node.Text = node.Text
+                .Replace("[cyan]", "[white on grey30]")
+                .Replace("[yellow]", "[white on grey30]")
+                .Replace("[dim]", "[dim on grey30]");
+            _tree.Container?.Invalidate(true);
+
+            if (_bookmarkNodes.Contains(node))
+                BookmarkRightClicked?.Invoke(path, args);
+            else
                 FolderRightClicked?.Invoke(path, args);
-            }
         };
     }
 
     public void LoadRoots()
     {
         _tree.Clear();
+        _bookmarkNodes.Clear();
+
+        if (_bookmarks.Count > 0)
+        {
+            var header = _tree.AddRootNode("[bold yellow]★ Favorites[/]");
+            header.Tag = null;
+            header.IsExpanded = true;
+
+            foreach (var bm in _bookmarks)
+            {
+                bool exists = false;
+                try { exists = Directory.Exists(bm.Path); } catch { }
+                var label = exists
+                    ? $"[yellow]★ {SharpConsoleUI.Parsing.MarkupParser.Escape(bm.Name)}[/]"
+                    : $"[dim]★ {SharpConsoleUI.Parsing.MarkupParser.Escape(bm.Name)} (missing)[/]";
+                var node = header.AddChild(label);
+                node.Tag = bm.Path;
+                _bookmarkNodes.Add(node);
+            }
+        }
+
         var drives = _fs.GetDrives();
         foreach (var drive in drives)
         {
@@ -85,6 +124,14 @@ public class FolderTreePanel
             AddPlaceholderIfNeeded(node, drive.RootPath);
         }
     }
+
+    public void SetBookmarks(IEnumerable<CXFiles.Models.BookmarkEntry> bookmarks)
+    {
+        _bookmarks = bookmarks.ToList();
+        Refresh();
+    }
+
+    public bool IsBookmarkNode(TreeNode node) => _bookmarkNodes.Contains(node);
 
     public void ExpandToPath(string targetPath, bool expandTarget = false)
     {

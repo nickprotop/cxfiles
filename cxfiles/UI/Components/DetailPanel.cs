@@ -11,15 +11,19 @@ namespace CXFiles.UI.Components;
 public class DetailPanel
 {
     private readonly IFileSystemService _fs;
+    private readonly IPdfPreviewService _pdf;
+    private readonly IMarkdownRenderer _md;
     private readonly ScrollablePanelControl _panel;
     private readonly MarkupControl _info;
     private readonly ImageControl _image;
 
     public ScrollablePanelControl Control => _panel;
 
-    public DetailPanel(IFileSystemService fs)
+    public DetailPanel(IFileSystemService fs, IPdfPreviewService pdf, IMarkdownRenderer md)
     {
         _fs = fs;
+        _pdf = pdf;
+        _md = md;
         _info = Controls.Markup()
             .WithAlignment(HorizontalAlignment.Stretch)
             .Build();
@@ -133,6 +137,14 @@ public class DetailPanel
         {
             AppendMediaMetadata(lines, entry.FullPath);
         }
+        else if (!entry.IsDirectory && IsPdfFile(entry.Extension))
+        {
+            AppendPdfPreview(lines, entry.FullPath);
+        }
+        else if (!entry.IsDirectory && IsMarkdownFile(entry.Extension))
+        {
+            AppendMarkdownPreview(lines, entry.FullPath);
+        }
         else if (!entry.IsDirectory && IsTextFile(entry.Extension))
         {
             lines.Add("");
@@ -215,6 +227,40 @@ public class DetailPanel
         catch { }
     }
 
+    private void AppendPdfPreview(List<string> lines, string path)
+    {
+        var result = _pdf.ExtractText(path, 20);
+        lines.Add("");
+        if (result.Error != null)
+        {
+            lines.Add("[dim]Unable to extract PDF text[/]");
+            return;
+        }
+        lines.Add($"[dim]Pages:[/]    {result.PageCount}");
+        lines.Add("");
+        lines.Add("[bold]Preview[/]");
+        lines.Add("[dim]─────────────────────────[/]");
+        foreach (var line in result.Text.Split('\n'))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            lines.Add($"[dim]{SharpConsoleUI.Parsing.MarkupParser.Escape(line)}[/]");
+        }
+        if (result.Truncated) lines.Add("[dim]…[/]");
+    }
+
+    private void AppendMarkdownPreview(List<string> lines, string path)
+    {
+        lines.Add("");
+        lines.Add("[bold]Preview[/]");
+        lines.Add("[dim]─────────────────────────[/]");
+        string content;
+        try { content = File.ReadAllText(path); }
+        catch { lines.Add("[dim]Unable to read file[/]"); return; }
+
+        foreach (var rendered in _md.RenderForConsole(content, 20))
+            lines.Add(rendered);
+    }
+
     private void HideImage()
     {
         if (_image.Visible)
@@ -246,6 +292,14 @@ public class DetailPanel
         ".cs" or ".js" or ".ts" or ".py" or ".rs" or ".go" or ".java" or
         ".cpp" or ".c" or ".h" or ".html" or ".css" or ".sql" or ".sh" or
         ".bash" or ".log" or ".cfg" or ".ini" or ".conf" or ".csv" => true,
+        _ => false
+    };
+
+    private static bool IsPdfFile(string? ext) => ext?.ToLowerInvariant() == ".pdf";
+
+    private static bool IsMarkdownFile(string? ext) => ext?.ToLowerInvariant() switch
+    {
+        ".md" or ".markdown" or ".mdown" or ".mkd" => true,
         _ => false
     };
 }

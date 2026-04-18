@@ -59,6 +59,28 @@ public partial class CXFilesApp
             // (Escape cancels the search; Ctrl+F is harmless re-focus).
         }
 
+        // Breadcrumb edit mode: text keys flow to the PromptControl. Esc, Tab,
+        // Ctrl+Space, Enter, and arrow navigation are intercepted in
+        // PreviewKeyPressed (Layout.cs) so they don't reach the prompt.
+        if (_breadcrumb.InEditMode && _breadcrumb.EditInput.HasFocus)
+        {
+            switch (key.Key)
+            {
+                case ConsoleKey.Backspace:
+                case ConsoleKey.Delete:
+                case ConsoleKey.LeftArrow:
+                case ConsoleKey.RightArrow:
+                case ConsoleKey.Home:
+                case ConsoleKey.End:
+                    return; // input owns these
+                case ConsoleKey.C when ctrl:
+                case ConsoleKey.X when ctrl:
+                case ConsoleKey.V when ctrl:
+                case ConsoleKey.A when ctrl:
+                    return;
+            }
+        }
+
         switch (key.Key)
         {
             case ConsoleKey.Backspace when !ctrl:
@@ -87,6 +109,17 @@ public partial class CXFilesApp
                 break;
 
             case ConsoleKey.Delete:
+                if (_folderTree.Control.HasFocus)
+                {
+                    var selected = _folderTree.Control.SelectedNode;
+                    if (selected != null && _folderTree.IsBookmarkNode(selected)
+                        && selected.Tag is string bmPath)
+                    {
+                        RemoveBookmark(bmPath);
+                        e.Handled = true;
+                        break;
+                    }
+                }
                 _ = DeleteSelectedAsync();
                 e.Handled = true;
                 break;
@@ -132,8 +165,18 @@ public partial class CXFilesApp
                 e.Handled = true;
                 break;
 
+            case ConsoleKey.L when ctrl: // Ctrl+L open go-to-path
+                _breadcrumb.EnterEditMode();
+                e.Handled = true;
+                break;
+
             case ConsoleKey.Escape when ActiveTab.Search.Restore != null:
                 CancelAndRestore(ActiveTab);
+                e.Handled = true;
+                break;
+
+            case ConsoleKey.D when ctrl: // Ctrl+D add current folder to favorites
+                AddCurrentFolderToFavorites();
                 e.Handled = true;
                 break;
 

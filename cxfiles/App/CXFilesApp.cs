@@ -206,9 +206,11 @@ public partial class CXFilesApp
             var entry = tab.FileList.GetSelectedEntry();
             if (entry != null && _mainWindow != null)
             {
+                var showFav = entry.IsDirectory
+                    && !_config.Config.Bookmarks.Any(b => b.Path == entry.FullPath);
                 _contextMenu.Show(entry, _mainWindow, tab.FileList.Control,
                     args.AbsolutePosition.X, args.AbsolutePosition.Y,
-                    _clipboard.HasContent);
+                    _clipboard.HasContent, showFav);
             }
         };
         return tab;
@@ -480,8 +482,240 @@ public partial class CXFilesApp
                 ActiveFileList.Refresh();
                 UpdateStatusLine();
             },
+            AddToFavorites: () => AddFolderToFavorites(folderPath),
+            ShowAddToFavorites: !_config.Config.Bookmarks.Any(b => b.Path == folderPath),
             HasClipboard: _clipboard.HasContent
         );
+    }
+
+    private void AddCurrentFolderToFavorites() => AddFolderToFavorites(ActiveTab.Path);
+
+    private void AddFolderToFavorites(string path)
+    {
+        var existing = _config.Config.Bookmarks.FirstOrDefault(b => b.Path == path);
+        if (existing != null)
+        {
+            _ws.NotificationStateService.ShowNotification(
+                "Favorites",
+                $"'{existing.Name}' is already in Favorites",
+                SharpConsoleUI.Core.NotificationSeverity.Info);
+            return;
+        }
+        _config.AddBookmark(path);
+        var added = _config.Config.Bookmarks.Last();
+        _ws.NotificationStateService.ShowNotification(
+            "Favorites",
+            $"Added '{added.Name}' to Favorites",
+            SharpConsoleUI.Core.NotificationSeverity.Info);
+    }
+
+    private void RemoveBookmark(string path)
+    {
+        var match = _config.Config.Bookmarks.FirstOrDefault(b => b.Path == path);
+        if (match == null) return;
+        _config.RemoveBookmark(path);
+        _ws.NotificationStateService.ShowNotification(
+            "Favorites",
+            $"Removed '{match.Name}' from Favorites",
+            SharpConsoleUI.Core.NotificationSeverity.Info);
+    }
+
+    private async Task RenameBookmarkAsync(string path)
+    {
+        var match = _config.Config.Bookmarks.FirstOrDefault(b => b.Path == path);
+        if (match == null) return;
+        var newName = await UI.Modals.RenameModal.ShowAsync(_ws, match.Name, _mainWindow);
+        if (!string.IsNullOrWhiteSpace(newName))
+            _config.RenameBookmark(path, newName);
+    }
+
+    private UI.Portals.BookmarksPortal? _bookmarksPortal;
+    private LayoutNode? _bookmarksPortalNode;
+
+    private void ShowBookmarksPortal()
+    {
+        if (_mainWindow == null) return;
+        DismissBookmarksPortal();
+
+        var anchorX = _mainWindow.Left + _mainWindow.Width - 4;
+        var anchorY = _mainWindow.Top + 2;
+
+        _bookmarksPortal = new UI.Portals.BookmarksPortal(
+            _config.Config.Bookmarks, anchorX, anchorY, _mainWindow);
+        _bookmarksPortal.Container = _mainWindow;
+        _bookmarksPortalNode = _mainWindow.CreatePortal(_breadcrumb.Control, _bookmarksPortal);
+
+        _bookmarksPortal.BookmarkSelected += (_, bm) =>
+        {
+            DismissBookmarksPortal();
+            if (Directory.Exists(bm.Path))
+            {
+                NavigateTo(bm.Path);
+            }
+            else
+            {
+                _ws.NotificationStateService.ShowNotification(
+                    "Favorites",
+                    $"Path no longer exists: {bm.Path}",
+                    SharpConsoleUI.Core.NotificationSeverity.Warning);
+            }
+        };
+
+        _bookmarksPortal.Dismissed += (_, _) => DismissBookmarksPortal();
+    }
+
+    private void DismissBookmarksPortal()
+    {
+        if (_bookmarksPortalNode != null && _mainWindow != null)
+        {
+            _mainWindow.RemovePortal(_breadcrumb.Control, _bookmarksPortalNode);
+            _bookmarksPortalNode = null;
+            _bookmarksPortal = null;
+        }
+    }
+
+    private CXFiles.UI.Portals.PathCompletionPortal? _pathPortal;
+    private LayoutNode? _pathPortalNode;
+
+    // Tracks whether the user has actively navigated (Up/Down/PgUp/PgDn) the
+    // completion portal since it opened. Determines Enter behavior:
+    //   - not navigated → Enter commits the typed path (browser URL-bar style)
+    //   - navigated     → Enter picks the highlighted candidate
+    internal bool _pathPortalUserNavigated;
+
+    // Debounced auto-open of the path completion portal: a short pause after
+    // typing (200 ms) opens the portal without firing on every keystroke.
+    private const int PathDebounceMs = 200;
+    private System.Threading.Timer? _pathDebounceTimer;
+    private string _pathDebouncePending = string.Empty;
+
+    private void SchedulePathDebounce(string text)
+    {
+        _pathDebouncePending = text;
+        if (_pathDebounceTimer == null)
+        {
+            _pathDebounceTimer = new System.Threading.Timer(_ =>
+            {
+                _ws.EnqueueOnUIThread(() =>
+                {
+                    // Only open if edit mode is still active and the portal
+                    // hasn't been opened by another path (Tab/Ctrl+Space).
+                    if (!_breadcrumb.InEditMode) return;
+                    if (_pathPortal != null) return;
+                    ShowOrUpdatePathPortal(_pathDebouncePending);
+                });
+            }, null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+        }
+        _pathDebounceTimer.Change(PathDebounceMs, System.Threading.Timeout.Infinite);
+    }
+
+    private void CancelPathDebounce()
+    {
+        _pathDebounceTimer?.Change(
+            System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+    }
+
+    private void ShowOrUpdatePathPortal(string text)
+    {
+        if (_mainWindow == null) return;
+
+        var (parent, fragment) = CXFiles.UI.PathCompleter.SplitFragment(text);
+        if (string.IsNullOrEmpty(parent)) { DismissPathPortal(); return; }
+
+        var candidates = CXFiles.UI.PathCompleter.Complete(
+            parent, fragment, _config.Config.ShowHiddenFiles);
+        if (candidates.Count == 0) { DismissPathPortal(); return; }
+
+        // Always dismiss-and-recreate so the portal's width, height, and border
+        // are sized freshly for the current candidate list. Reusing via
+        // UpdateCandidates left stale bounds that clipped the border.
+        DismissPathPortal();
+
+        int anchorX = _mainWindow.Left + 2;
+        int anchorY = _mainWindow.Top + 2;
+
+        // Fresh portal — user hasn't navigated yet.
+        _pathPortalUserNavigated = false;
+
+        _pathPortal = new CXFiles.UI.Portals.PathCompletionPortal(
+            candidates, anchorX, anchorY, _mainWindow);
+        _pathPortal.Container = _mainWindow;
+        _pathPortalNode = _mainWindow.CreatePortal(_breadcrumb.Control, _pathPortal);
+
+        _pathPortal.CandidateSelected += (_, candidate) =>
+        {
+            var (p2, _) = CXFiles.UI.PathCompleter.SplitFragment(_breadcrumb.EditInput.Input);
+            var newInput = Path.Combine(p2, candidate) + Path.DirectorySeparatorChar;
+            _breadcrumb.EditInput.Input = newInput;
+            DismissPathPortal();
+            // If the newly drilled-into directory has children to complete,
+            // reopen the portal so the user can keep navigating without
+            // pressing Tab again.
+            ShowOrUpdatePathPortal(newInput);
+        };
+
+        _pathPortal.Dismissed += (_, _) => DismissPathPortal();
+    }
+
+    private void DismissPathPortal()
+    {
+        if (_pathPortalNode != null && _mainWindow != null)
+        {
+            _mainWindow.RemovePortal(_breadcrumb.Control, _pathPortalNode);
+            _pathPortalNode = null;
+            _pathPortal = null;
+        }
+    }
+
+    private void SubmitPath(string text)
+    {
+        var resolved = CXFiles.UI.PathCompleter.Resolve(text, ActiveTab.Path);
+        if (Directory.Exists(resolved))
+        {
+            DismissPathPortal();
+            _breadcrumb.ExitEditMode();
+            NavigateTo(resolved);
+            ReturnFocusToFileList();
+        }
+        else
+        {
+            _ws.NotificationStateService.ShowNotification(
+                "Go to path",
+                $"Path not found: {resolved}",
+                SharpConsoleUI.Core.NotificationSeverity.Warning);
+        }
+    }
+
+    private void ReturnFocusToFileList()
+    {
+        SharpConsoleUI.Extensions.WindowControlExtensions.RequestFocus(
+            ActiveFileList.Control, SharpConsoleUI.Controls.FocusReason.Keyboard);
+    }
+
+    private void HandleBreadcrumbTab()
+    {
+        CancelPathDebounce();
+        var text = _breadcrumb.EditInput.Input;
+        var (parent, fragment) = CXFiles.UI.PathCompleter.SplitFragment(text);
+        if (string.IsNullOrEmpty(parent)) return;
+
+        var candidates = CXFiles.UI.PathCompleter.Complete(
+            parent, fragment, _config.Config.ShowHiddenFiles);
+
+        if (candidates.Count == 0) return;
+
+        if (candidates.Count == 1)
+        {
+            _breadcrumb.EditInput.Input = Path.Combine(parent, candidates[0]) + Path.DirectorySeparatorChar;
+            DismissPathPortal();
+            return;
+        }
+
+        var lcp = CXFiles.UI.PathCompleter.LongestCommonPrefix(candidates);
+        if (lcp.Length > fragment.Length)
+            _breadcrumb.EditInput.Input = Path.Combine(parent, lcp);
+
+        ShowOrUpdatePathPortal(_breadcrumb.EditInput.Input);
     }
 
     private async Task RenameFolderAsync(string path)

@@ -82,6 +82,7 @@ public class HelpModal : ModalBase<bool>
             ("↑ ↓",         "Move selection"),
             ("Home / End",  "First / last entry"),
             ("F3",          "Toggle detail panel"),
+            ("Ctrl+L",      "Go to path (edit breadcrumb)"),
         }),
         ("Files", new[]
         {
@@ -121,6 +122,11 @@ public class HelpModal : ModalBase<bool>
             ("Ctrl+H",      "Toggle hidden files"),
             ("F5",          "Refresh"),
             ("Ctrl+O",      "Options"),
+        }),
+        ("Favorites", new[]
+        {
+            ("Ctrl+D",     "Add current folder to Favorites"),
+            ("Del",        "Remove bookmark (on Favorites node)"),
         }),
         ("App", new[]
         {

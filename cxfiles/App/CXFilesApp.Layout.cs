@@ -5,6 +5,7 @@ using SharpConsoleUI.Events;
 using SharpConsoleUI.Helpers;
 using SharpConsoleUI.Layout;
 using SharpConsoleUI.Rendering;
+using CXFiles.Services;
 using CXFiles.UI.Components;
 
 namespace CXFiles.App;
@@ -17,6 +18,21 @@ public partial class CXFilesApp
         _breadcrumb = new BreadcrumbBar();
         _breadcrumb.SegmentClicked += path => NavigateTo(path);
         _breadcrumb.TrashClicked += NavigateToTrash;
+        _breadcrumb.FavoritesClicked += ShowBookmarksPortal;
+        _breadcrumb.PathSubmitted += SubmitPath;
+        _breadcrumb.EditCancelled += () =>
+        {
+            DismissPathPortal();
+            CancelPathDebounce();
+        };
+        // If portal is already open, refresh it live on every keystroke.
+        // If closed, schedule a debounced open so it appears after the user
+        // pauses typing (fast explicit trigger: Tab or Ctrl+Space).
+        _breadcrumb.EditTextChanged += text =>
+        {
+            if (_pathPortal != null) ShowOrUpdatePathPortal(text);
+            else SchedulePathDebounce(text);
+        };
 
         // Toolbar
         _toolbar = Controls.Toolbar()
@@ -87,10 +103,11 @@ public partial class CXFilesApp
         _contextMenu.OnPaste += () => _ = PasteAsync();
         _contextMenu.OnNewItem += isDir => _ = NewItemAsync(isDir);
         _contextMenu.OnRefresh += Refresh;
+        _contextMenu.OnAddToFavorites += entry => AddFolderToFavorites(entry.FullPath);
         _contextMenu.OnDismissed += () => _folderTree.ClearContextHighlight();
 
         // Detail panel (right panel)
-        _detailPanel = new DetailPanel(_fs);
+        _detailPanel = new DetailPanel(_fs, new PdfPreviewService(), new MarkdownRenderer());
 
         // Status line
         _statusLine = new StatusLine();
@@ -218,6 +235,19 @@ public partial class CXFilesApp
         // Compositor overlay: paints search hint/state messages over the file list area.
         _mainWindow.PostBufferPaint += PaintSearchOverlay;
 
+        // Auto-exit breadcrumb edit mode when focus moves off the input.
+        // Window-level FocusManager is more reliable than the control-level
+        // LostFocus event (which can miss transitions in some cases).
+        _mainWindow.FocusManager.FocusChanged += (_, args) =>
+        {
+            if (_breadcrumb.InEditMode
+                && ReferenceEquals(args.Previous, _breadcrumb.EditInput)
+                && !ReferenceEquals(args.Current, _breadcrumb.EditInput))
+            {
+                _breadcrumb.ExitEditMode();
+            }
+        };
+
         // Route preview keys to context menu / operations / clipboard portals
         _mainWindow.PreviewKeyPressed += (_, e) =>
         {
@@ -233,6 +263,70 @@ public partial class CXFilesApp
                 _clipPortal.ProcessKey(e.KeyInfo);
                 e.Handled = true;
                 return;
+            }
+
+            // Breadcrumb edit mode: intercept Esc / Tab / Ctrl+Space / Enter /
+            // Up / Down / PgUp / PgDn BEFORE the PromptControl sees them so they
+            // drive the completion portal (or exit edit) instead of being typed
+            // into the input or firing its Entered event.
+            if (_breadcrumb.InEditMode && _breadcrumb.EditInput.HasFocus)
+            {
+                var bk = e.KeyInfo;
+                bool bctrl = bk.Modifiers.HasFlag(ConsoleModifiers.Control);
+
+                if (bk.Key == ConsoleKey.Escape)
+                {
+                    if (_pathPortal != null)
+                    {
+                        DismissPathPortal();
+                    }
+                    else
+                    {
+                        _breadcrumb.ExitEditMode();
+                        ReturnFocusToFileList();
+                    }
+                    e.Handled = true;
+                    return;
+                }
+
+                if (bk.Key == ConsoleKey.Tab
+                    || (bctrl && bk.Key == ConsoleKey.Spacebar))
+                {
+                    HandleBreadcrumbTab();
+                    e.Handled = true;
+                    return;
+                }
+
+                if (_pathPortal != null)
+                {
+                    switch (bk.Key)
+                    {
+                        case ConsoleKey.UpArrow:
+                        case ConsoleKey.DownArrow:
+                        case ConsoleKey.PageUp:
+                        case ConsoleKey.PageDown:
+                            _pathPortalUserNavigated = true;
+                            _pathPortal.ProcessKey(bk);
+                            e.Handled = true;
+                            return;
+
+                        case ConsoleKey.Enter:
+                            if (_pathPortalUserNavigated)
+                            {
+                                // User picked a candidate — let the portal select.
+                                _pathPortal.ProcessKey(bk);
+                            }
+                            else
+                            {
+                                // URL-bar convention: Enter commits the typed path
+                                // even though a candidate is visually highlighted.
+                                DismissPathPortal();
+                                SubmitPath(_breadcrumb.EditInput.Input);
+                            }
+                            e.Handled = true;
+                            return;
+                    }
+                }
             }
 
             // When the terminal has focus, intercept app-level keys BEFORE
@@ -268,5 +362,37 @@ public partial class CXFilesApp
                     args.AbsolutePosition.X, args.AbsolutePosition.Y, actions);
             }
         };
+
+        _folderTree.BookmarkRightClicked += (path, args) =>
+        {
+            if (_mainWindow == null) return;
+            _contextMenu.ShowForBookmark(
+                path, _mainWindow, _folderTree.Control,
+                args.AbsolutePosition.X, args.AbsolutePosition.Y,
+                onOpen: () =>
+                {
+                    if (Directory.Exists(path)) NavigateTo(path);
+                    else _ws.NotificationStateService.ShowNotification(
+                        "Favorites", $"Path no longer exists: {path}",
+                        SharpConsoleUI.Core.NotificationSeverity.Warning);
+                },
+                onRename: () => _ = RenameBookmarkAsync(path),
+                onRemove: () => RemoveBookmark(path));
+        };
+
+        _folderTree.MissingBookmarkClicked += (path) =>
+        {
+            _ws.NotificationStateService.ShowNotification(
+                "Favorites",
+                $"Path no longer exists: {path}",
+                SharpConsoleUI.Core.NotificationSeverity.Warning);
+        };
+
+        _config.BookmarksChanged += (_, _) =>
+        {
+            _folderTree.SetBookmarks(_config.Config.Bookmarks);
+        };
+
+        _folderTree.SetBookmarks(_config.Config.Bookmarks);
     }
 }

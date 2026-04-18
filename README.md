@@ -57,13 +57,15 @@ cxfiles
 | 🗑️ **Trash Support** | Cross-platform trash (XDG on Linux, ~/.Trash on macOS, Recycle Bin on Windows) with restore and empty |
 | 📎 **Clipboard Portal** | View, manage, and remove individual clipboard items (`Ctrl+B`) |
 | 🌳 **Folder Tree** | Lazy-loading tree with single-click navigation, two-way sync, drive-type icons, smart Linux mount filtering (hides virtual/pseudo filesystems) |
+| ⭐ **Favorites** | Pin folders with `Ctrl+D`; appear as a "Favorites" section at the top of the folder tree with a quick-access `⭐` dropdown button on the breadcrumb right-bar. Rename, remove (`Del` on a bookmark node), and session-persistent. Right-click "Add to Favorites" on any folder in tree or file list. Missing targets render dim with a click warning |
 | 🔍 **Filter & Sort** | Fuzzy filtering (`/`), click-to-sort columns, column resize |
 | 🔎 **Recursive Search** | `Ctrl+F` opens a per-tab search bar; results stream live as a background walker finds matches, dirs first, with a `Path` column. Cancellable, cross-filesystem aware (skips `/proc`, `/sys`, foreign mounts), 200k entry cap. Lazy metadata hydration keeps the walker fast on huge trees. `./` prefix forces non-recursive; `Esc` restores the previous listing |
 | ❓ **Help & About** | `F1` opens a tabbed modal: categorized keyboard cheatsheet plus an About tab with figlet, environment info, and live home-volume usage |
 | 📊 **Operations Portal** | Live progress bars, per-file status, cancel buttons, dismiss completed (`Ctrl+P`) |
 | 🖱️ **Context Menus** | Right-click on files or tree folders for contextual actions; tree right-click highlights the target node and operates on the right-clicked item, not the selection |
 | 📁 **Breadcrumb Bar** | Clickable path segments with quick-access locations (Home, Desktop, Docs, Downloads, Trash) |
-| 👁️ **Detail Panel** | Selection preview with text file content, image preview (half-block or Kitty protocol on supported terminals), and a folder card when nothing is selected (toggle with `F3`) |
+| 🧭 **Go to Path** | `Ctrl+L` (or the `❯ Go to` button) turns the breadcrumb into an editable input with filesystem tab-completion. Candidates appear in a dropdown portal after a short pause, or on demand with `Tab` / `Ctrl+Space`. Handles `~`, absolute, and relative paths. `Esc` cancels |
+| 👁️ **Detail Panel** | Selection preview with text content, rendered **Markdown** (headings, lists, code blocks, links), **PDF** text extract with page count, image preview (half-block or Kitty protocol), and a folder card when nothing is selected (toggle with `F3`) |
 | 🖼️ **Image Preview** | PNG, JPG, GIF, BMP, WebP rendered in the detail panel with dimensions; native Kitty graphics protocol on supported terminals for full-resolution preview |
 | 🎵 **Media Metadata** | Audio/video files show duration, bitrate, codec, title, artist, album via TagLibSharp; images show EXIF (camera, lens, exposure, GPS) |
 | 🖱️ **Null-Selection UX** | Click empty space to deselect; `F4` then shows properties for the current folder |
@@ -108,8 +110,10 @@ cxfiles
 | `Ctrl+B` | Clipboard portal |
 | `Ctrl+P` | Operations portal |
 | `Ctrl+H` | Toggle hidden files |
+| `Ctrl+D` | Add current folder to Favorites |
 | `Ctrl+O` | Options |
 | `Ctrl+F` | Recursive search in current folder |
+| `Ctrl+L` | Go to path (editable breadcrumb with completion) |
 | `/` | Filter file list (current folder only) |
 | `Ctrl+Q` | Quit (confirms if terminal or operations active) |
 

@@ -53,19 +53,21 @@ cxfiles
 |---|---|
 | 🗂️ **Three-Pane Layout** | Folder tree, sortable file list with checkboxes, toggleable detail panel |
 | 🧭 **Tabs** | Multiple open folders per window; `Ctrl+T` to open, `Ctrl+W` to close, `Alt+←/→` to cycle, `Ctrl+1..5` to jump |
-| 📋 **File Operations** | Copy, cut, paste, delete, rename with background progress tracking |
+| 📋 **File Operations** | Copy, cut, paste, delete, rename with background progress tracking; files with spaces handled correctly |
 | 🗑️ **Trash Support** | Cross-platform trash (XDG on Linux, ~/.Trash on macOS, Recycle Bin on Windows) with restore and empty |
 | 📎 **Clipboard Portal** | View, manage, and remove individual clipboard items (`Ctrl+B`) |
-| 🌳 **Folder Tree** | Lazy-loading tree with single-click navigation and two-way sync |
+| 🌳 **Folder Tree** | Lazy-loading tree with single-click navigation, two-way sync, drive-type icons, smart Linux mount filtering (hides virtual/pseudo filesystems) |
 | 🔍 **Filter & Sort** | Fuzzy filtering (`/`), click-to-sort columns, column resize |
 | 🔎 **Recursive Search** | `Ctrl+F` opens a per-tab search bar; results stream live as a background walker finds matches, dirs first, with a `Path` column. Cancellable, cross-filesystem aware (skips `/proc`, `/sys`, foreign mounts), 200k entry cap. Lazy metadata hydration keeps the walker fast on huge trees. `./` prefix forces non-recursive; `Esc` restores the previous listing |
 | ❓ **Help & About** | `F1` opens a tabbed modal: categorized keyboard cheatsheet plus an About tab with figlet, environment info, and live home-volume usage |
 | 📊 **Operations Portal** | Live progress bars, per-file status, cancel buttons, dismiss completed (`Ctrl+P`) |
-| 🖱️ **Context Menus** | Right-click on files or folders for contextual actions |
+| 🖱️ **Context Menus** | Right-click on files or tree folders for contextual actions; tree right-click highlights the target node and operates on the right-clicked item, not the selection |
 | 📁 **Breadcrumb Bar** | Clickable path segments with quick-access locations (Home, Desktop, Docs, Downloads, Trash) |
-| 👁️ **Detail Panel** | Selection preview **and** a folder card when nothing is selected (toggle with `F3`) |
+| 👁️ **Detail Panel** | Selection preview with text file content, image preview (half-block or Kitty protocol on supported terminals), and a folder card when nothing is selected (toggle with `F3`) |
+| 🖼️ **Image Preview** | PNG, JPG, GIF, BMP, WebP rendered in the detail panel with dimensions; native Kitty graphics protocol on supported terminals for full-resolution preview |
+| 🎵 **Media Metadata** | Audio/video files show duration, bitrate, codec, title, artist, album via TagLibSharp; images show EXIF (camera, lens, exposure, GPS) |
 | 🖱️ **Null-Selection UX** | Click empty space to deselect; `F4` then shows properties for the current folder |
-| 📐 **Properties Dialog** | Tabbed modal: General, Permissions (`rwxr-xr-x` + owner/group), Space, Checksums |
+| 📐 **Properties Dialog** | Tabbed modal: General, Permissions (`rwxr-xr-x` + owner/group), Space, Checksums, and a Media tab for images/audio/video with full metadata |
 | 💽 **Space Tab** | Live drive usage + a **breakdown** of the folder's immediate children as sorted bar graphs — answers "where's my disk going?" without leaving the app |
 | 🔐 **Checksums Tab** | On-demand MD5 / SHA256 with progress bar; cancel by closing the dialog |
 | ✅ **Multi-Select** | Checkbox selection with bulk copy, cut, delete |
@@ -75,7 +77,8 @@ cxfiles
 | ⚙️ **Options Dialog** | NavigationView-based settings with per-OS config storage |
 | 👻 **Hidden Files** | Toggle visibility with `Ctrl+H` |
 | 📡 **File Watcher** | Auto-refresh on external filesystem changes |
-| 🎨 **Polished UI** | Gradient background, smooth-gradient bar graphs, alternating row tints, truncation fade, column separators, panel headers |
+| ⚙️ **Layout Persistence** | Tree and detail panel column widths saved across sessions; detail panel visibility persisted immediately |
+| 🎨 **Polished UI** | Gradient background, smooth-gradient bar graphs, alternating row tints, truncation fade, column separators, panel headers, underlined breadcrumb links |
 
 ## Keyboard Shortcuts
 
@@ -112,7 +115,7 @@ cxfiles
 
 ## The Properties dialog
 
-Press `F4` on a file, folder, or drive (or click **Folder Props** in the toolbar when nothing is selected). You get a tabbed modal with four sections:
+Press `F4` on a file, folder, or drive (or click **Folder Props** in the toolbar when nothing is selected). You get a tabbed modal with up to five sections:
 
 - **General** — name, type, location, size, modified / created / accessed, attributes, symlink target.
 - **Permissions** — Unix mode formatted as `rwxr-xr-x` plus numeric (`0755`), owner and group resolved via `stat`. On Windows, `FileAttributes` flags.
@@ -123,6 +126,7 @@ Press `F4` on a file, folder, or drive (or click **Folder Props** in the toolbar
     - Permission-denied entries are counted live and surfaced as a yellow warning so you know the total is a lower bound.
     - The entire scan cancels instantly when the dialog closes.
 - **Checksums** — on-demand MD5 / SHA256 for files, computed in 64 KB chunks with a throttled progress bar.
+- **Media** *(images, audio, video only)* — technical properties (duration, resolution, bitrate, codecs), tags (title, artist, album, year, genre, track, BPM), and EXIF data for images (camera make/model, focal length, aperture, shutter speed, ISO, GPS, date taken).
 
 ## Architecture
 
@@ -133,14 +137,16 @@ CXFiles uses Microsoft.Extensions.DependencyInjection with a clean service layer
 - **SudoService** — Privilege elevation via sudo on Linux/macOS
 - **IConfigService** — Per-OS configuration (XDG on Linux, AppData on Windows, Library on macOS)
 - **OperationManager** — Background operation tracking with throttled progress events
-- **UI Components** — Modular panels (BreadcrumbBar, FileListPanel, FolderTreePanel, DetailPanel, StatusLine)
-- **Modals** — Async `TaskCompletionSource`-based dialogs (DeleteConfirm, Rename, NewItem, Properties, Options, Sudo)
+- **LauncherService** — Cross-platform file/editor opening with proper argument quoting
+- **UI Components** — Modular panels (BreadcrumbBar, FileListPanel, FolderTreePanel, DetailPanel with image preview, StatusLine)
+- **Modals** — Async `TaskCompletionSource`-based dialogs (DeleteConfirm, Rename, NewItem, Properties with Media tab, Options, Sudo)
 - **Portals** — Operations portal, clipboard portal, context menus (portal-based overlays)
 
 ## Requirements
 
 - .NET 10 SDK (for building from source)
 - A terminal with Unicode support (Kitty, WezTerm, Ghostty, Windows Terminal, iTerm2)
+- Kitty-compatible terminal recommended for full-resolution image preview (falls back to half-block rendering elsewhere)
 
 ## License
 

@@ -470,34 +470,63 @@ public partial class CXFilesApp
         var isCut = _clipboard.Action == Services.ClipboardAction.Cut;
         var opType = isCut ? Services.OperationType.Move : Services.OperationType.Copy;
         var paths = _clipboard.Paths.ToList();
+        var destDir = ActiveTab.Path;
         var desc = $"{(isCut ? "Moving" : "Copying")} {paths.Count} item{(paths.Count > 1 ? "s" : "")}";
         var op = _operations.StartOperation(opType, desc);
-        op.BytesTotal = paths.Count;
         UpdateStatusLine();
 
         if (isCut) _clipboard.Clear();
+
+        // Pause watchers on every tab that's viewing the destination dir. A large write
+        // to a slow filesystem (NFS, USB) emits dozens of Changed events; if any tab
+        // watches that dir, the UI thread drowns in listing refreshes. Resumed + refreshed
+        // once in finally, where we're sure we have the final state.
+        var pausedWatchers = _tabs
+            .Where(t => string.Equals(t.Path, destDir, StringComparison.Ordinal))
+            .Select(t => t.FileWatcher)
+            .OfType<Services.IDirectoryWatcher>()
+            .ToList();
+        foreach (var w in pausedWatchers) w.Pause();
 
         _ = Task.Run(async () =>
         {
             try
             {
+                long totalBytes = EstimateTotalBytes(paths);
+                op.BytesTotal = totalBytes > 0 ? totalBytes : paths.Count;
+
+                long doneBytes = 0;
                 for (int i = 0; i < paths.Count; i++)
                 {
                     op.Cts.Token.ThrowIfCancellationRequested();
                     var sourcePath = paths[i];
                     var name = Path.GetFileName(sourcePath);
-                    var destPath = Path.Combine(ActiveTab.Path, name);
+                    var destPath = Path.Combine(destDir, name);
                     op.CurrentFile = name;
-                    _operations.ReportProgress(op, i, paths.Count);
+
+                    long fileBase = doneBytes;
+                    var progress = new CallbackProgress<(long bytes, long total)>(p =>
+                        _operations.ReportProgress(op,
+                            fileBase + p.bytes,
+                            Math.Max(totalBytes, fileBase + p.total)));
 
                     if (isCut)
-                        await _fs.MoveAsync(sourcePath, destPath, false, op.Cts.Token);
+                        await _fs.MoveAsync(sourcePath, destPath, false, progress, op.Cts.Token);
                     else
-                        await _fs.CopyAsync(sourcePath, destPath, false, null, op.Cts.Token);
+                        await _fs.CopyAsync(sourcePath, destPath, false, progress, op.Cts.Token);
+
+                    try
+                    {
+                        if (File.Exists(destPath))
+                            doneBytes = fileBase + new FileInfo(destPath).Length;
+                        else if (Directory.Exists(destPath))
+                            doneBytes = fileBase; // dir sizes already accounted via streaming progress
+                    }
+                    catch { }
                 }
-                _operations.ReportProgress(op, paths.Count, paths.Count);
+                var finalBytes = Math.Max(doneBytes, totalBytes);
+                _operations.ReportProgress(op, finalBytes, finalBytes);
                 _operations.CompleteOperation(op, Services.OperationStatus.Completed);
-                _ws.EnqueueOnUIThread(Refresh);
             }
             catch (OperationCanceledException)
             {
@@ -508,15 +537,50 @@ public partial class CXFilesApp
                 _operations.RemoveOperation(op);
                 var sudoPaths = paths;
                 var sudoCut = isCut;
-                var destDir = ActiveTab.Path;
                 _ws.EnqueueOnUIThread(() => PromptSudoPaste(sudoPaths, sudoCut, destDir));
             }
             catch (Exception ex)
             {
                 _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
             }
-            _ws.EnqueueOnUIThread(UpdateStatusLine);
+            finally
+            {
+                foreach (var w in pausedWatchers) w.Resume();
+                _ws.EnqueueOnUIThread(Refresh);
+                _ws.EnqueueOnUIThread(UpdateStatusLine);
+            }
         });
+    }
+
+    private static long EstimateTotalBytes(IList<string> paths)
+    {
+        long total = 0;
+        foreach (var p in paths)
+        {
+            try
+            {
+                if (Directory.Exists(p))
+                {
+                    foreach (var f in Directory.EnumerateFiles(p, "*", SearchOption.AllDirectories))
+                    {
+                        try { total += new FileInfo(f).Length; } catch { }
+                    }
+                }
+                else if (File.Exists(p))
+                {
+                    total += new FileInfo(p).Length;
+                }
+            }
+            catch { }
+        }
+        return total;
+    }
+
+    private sealed class CallbackProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _callback;
+        public CallbackProgress(Action<T> callback) { _callback = callback; }
+        public void Report(T value) => _callback(value);
     }
 
     private void PromptSudoPaste(List<string> paths, bool isCut, string destDir)

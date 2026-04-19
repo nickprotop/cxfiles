@@ -13,15 +13,27 @@ public record FileEntry(
     bool IsReadOnly,
     string? Extension)
 {
+    // True when this directory is itself a mount point whose filesystem differs
+    // from its parent (e.g. an NFS share mounted under ~/Downloads). Set by
+    // FileSystemService.ListDirectory so the UI can flag it and avoid scanning it.
+    public bool IsForeignMount { get; init; }
+
+    // When IsForeignMount is true, the mount's filesystem kind (e.g. "nfs4",
+    // "ext4", "cifs"), surfaced via DriveInfo.DriveFormat. Used for the file
+    // list marker and the Properties "other filesystems" section.
+    public string? MountFormat { get; init; }
+
     public string DisplaySize => IsDirectory ? "" : FormatSize(Size);
 
     public string DisplayDate => Modified.ToString("yyyy-MM-dd HH:mm");
 
-    public string TypeDescription => IsDirectory ? "Folder" :
-        string.IsNullOrEmpty(Extension) ? "File" :
-        Extension.ToUpperInvariant().TrimStart('.') + " File";
+    public string TypeDescription => IsForeignMount
+        ? (string.IsNullOrEmpty(MountFormat) ? "Mount" : $"Mount ({MountFormat})")
+        : IsDirectory ? "Folder"
+        : string.IsNullOrEmpty(Extension) ? "File"
+        : Extension.ToUpperInvariant().TrimStart('.') + " File";
 
-    public string Icon => IsDirectory ? (IsSymlink ? "↗" : "📁") :
+    public string Icon => IsDirectory ? (IsForeignMount ? "⇆" : IsSymlink ? "↗" : "📁") :
         IsSymlink ? "↗" :
         Extension?.ToLowerInvariant() switch
         {

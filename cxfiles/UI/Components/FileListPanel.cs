@@ -145,6 +145,33 @@ public class FileListPanel
 
     public void Refresh() => Navigate(_currentPath);
 
+    // Offloads the potentially-slow directory listing to a background thread
+    // (slow filesystems like NFS can block for seconds on stat/readdir), then
+    // marshals the result back via the provided dispatcher. Used by the
+    // FileSystemWatcher callback so the UI thread never blocks on IO.
+    public void RefreshAsync(Action<Action> marshalToUi)
+    {
+        var path = _currentPath;
+        if (string.IsNullOrEmpty(path)) return;
+        _ = Task.Run(() =>
+        {
+            List<FileEntry> entries;
+            try
+            {
+                entries = _fs.ListDirectory(path)
+                    .Where(e => _showHidden || !e.IsHidden)
+                    .ToList();
+            }
+            catch { return; }
+            marshalToUi(() =>
+            {
+                if (path != _currentPath) return;
+                if (_table.DataSource != _dataSource) _table.DataSource = _dataSource;
+                _dataSource.SetEntries(entries);
+            });
+        });
+    }
+
     // --- Search-mode hooks ---
 
     public void EnterSearchMode(SearchResultsDataSource results)

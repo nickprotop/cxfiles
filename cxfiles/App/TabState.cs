@@ -22,7 +22,7 @@ public class TabState
     public SearchBar SearchBar { get; }
     public FileListPanel FileList { get; }
     public ScrollablePanelControl Container { get; }
-    public IDisposable? FileWatcher { get; set; }
+    public IDirectoryWatcher? FileWatcher { get; set; }
     public SearchState Search { get; } = new();
 
     public TabState(IFileSystemService fs, bool showHidden, bool autoSelectFirstItem, string initialPath)

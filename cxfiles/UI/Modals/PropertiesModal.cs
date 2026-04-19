@@ -22,9 +22,24 @@ public class PropertiesModal : ModalBase<bool>
 
     // Breakdown: key → single-line bar. Key "" = direct files of the scan root.
     private readonly Dictionary<string, BarGraphControl> _childRows = new();
+    private readonly Dictionary<string, ForeignChildInfo> _foreignChildren = new(StringComparer.Ordinal);
     private ScrollablePanelControl? _spacePanel;
     private bool _breakdownSorted;
     private const int BreakdownMaxRows = 20;
+
+    // Metadata captured at breakdown-build time for a foreign-mount subdir so we can
+    // show the remote drive's used% immediately (no recursion), disclose its stats,
+    // and offer an on-demand scan without re-querying DriveInfo on every progress tick.
+    // ResolvedPath is the symlink-followed target; Scan uses it so the inner modal's
+    // mount detection treats the remote filesystem as its own (not "foreign to itself").
+    private sealed record ForeignChildInfo(
+        string Key,
+        string SubPath,
+        string ResolvedPath,
+        string MountRoot,
+        string Format,
+        long Total,
+        long Free);
 
     private MarkupControl? _md5Result;
     private MarkupControl? _sha256Result;
@@ -334,9 +349,13 @@ public class PropertiesModal : ModalBase<bool>
 
     private void BuildBreakdownSection(ScrollablePanelControl panel)
     {
-        List<(string key, string display, bool foreign)> rows = new();
+        List<(string key, string display, bool foreign, string subPath)> rows = new();
 
-        var scanDrive = GetDriveForPath(_entry.FullPath);
+        // Resolve the scan root before mount-matching so that when the user opens
+        // Properties on a symlink (e.g. ~/Downloads → /mnt/nick/Downloads) we compare
+        // against the real underlying mount, not the link's apparent parent.
+        var scanResolved = FileSystemService.ResolveFullTarget(_entry.FullPath);
+        var scanDrive = GetDriveForPath(scanResolved);
         string? scanMount = scanDrive != null
             ? Path.TrimEndingDirectorySeparator(scanDrive.RootDirectory.FullName)
             : null;
@@ -349,16 +368,26 @@ public class PropertiesModal : ModalBase<bool>
                 if (string.IsNullOrEmpty(name)) name = sub;
 
                 bool foreign = false;
+                var subResolved = FileSystemService.ResolveFullTarget(sub);
                 if (scanMount != null)
                 {
-                    var childDrive = GetDriveForPath(sub);
+                    var childDrive = GetDriveForPath(subResolved);
                     if (childDrive != null)
                     {
                         var childMount = Path.TrimEndingDirectorySeparator(childDrive.RootDirectory.FullName);
                         foreign = !string.Equals(childMount, scanMount, StringComparison.Ordinal);
+                        if (foreign)
+                        {
+                            string fmt = "";
+                            long total = 0, free = 0;
+                            try { fmt = childDrive.DriveFormat ?? ""; } catch { }
+                            try { total = childDrive.TotalSize; } catch { }
+                            try { free = childDrive.AvailableFreeSpace; } catch { }
+                            _foreignChildren[name] = new ForeignChildInfo(name, sub, subResolved, childMount, fmt, total, free);
+                        }
                     }
                 }
-                rows.Add((name, name, foreign));
+                rows.Add((name, name, foreign, sub));
             }
         }
         catch { }
@@ -368,7 +397,7 @@ public class PropertiesModal : ModalBase<bool>
         bool hasDirectFiles = false;
         try { hasDirectFiles = Directory.EnumerateFiles(_entry.FullPath).Any(); }
         catch { }
-        if (hasDirectFiles) rows.Add(("", "(files)", false));
+        if (hasDirectFiles) rows.Add(("", "(files)", false, ""));
 
         if (rows.Count == 0) return;
 
@@ -378,10 +407,16 @@ public class PropertiesModal : ModalBase<bool>
             .WithMargin(0, 1, 0, 0)
             .Build());
 
-        foreach (var (key, display, foreign) in rows)
+        foreach (var (key, display, foreign, subPath) in rows)
         {
+            if (foreign && _foreignChildren.TryGetValue(key, out var info))
+            {
+                BuildForeignRow(panel, key, display, info);
+                continue;
+            }
+
             var bar = Controls.BarGraph()
-                .WithLabel(FormatBreakdownLabel(display, foreign ? -1 : 0))
+                .WithLabel(FormatBreakdownLabel(display, 0))
                 .WithLabelWidth(26)
                 .WithMaxValue(100)
                 .WithValue(0)
@@ -393,6 +428,61 @@ public class PropertiesModal : ModalBase<bool>
             panel.AddControl(bar);
             _childRows[key] = bar;
         }
+    }
+
+    // Renders a foreign-mount subdir as a live card: the bar tracks that mount's
+    // own used% (from DriveInfo, no recursion), with a secondary line showing
+    // used/total and the mount root, plus a Scan button that opens a fresh
+    // Properties modal rooted at the subdir to scan the remote fs on demand.
+    private void BuildForeignRow(ScrollablePanelControl panel, string key, string display, ForeignChildInfo info)
+    {
+        double usedPct = info.Total > 0 ? (info.Total - info.Free) * 100.0 / info.Total : 0;
+        long used = info.Total - info.Free;
+
+        var bar = Controls.BarGraph()
+            .WithLabel(FormatForeignLabel(display, info.Format))
+            .WithLabelWidth(26)
+            .WithMaxValue(100)
+            .WithValue(Math.Clamp(usedPct, 0, 100))
+            .WithValueFormat("0.0' %'")
+            .WithBarWidth(20)
+            .WithSmoothGradient("green→yellow→red")
+            .WithMargin(1, 0, 1, 0)
+            .Build();
+        panel.AddControl(bar);
+        _childRows[key] = bar;
+
+        string mountRoot = SharpConsoleUI.Parsing.MarkupParser.Escape(info.MountRoot);
+        string sizes = info.Total > 0
+            ? $"{FileEntry.FormatSize(used)} / {FileEntry.FormatSize(info.Total)} used"
+            : "size unknown";
+        panel.AddControl(Controls.Markup()
+            .AddLine($"    [dim]↳ other filesystem · {sizes} · {mountRoot}[/]")
+            .WithMargin(1, 0, 1, 0)
+            .Build());
+
+        var btn = Controls.Button($"Scan {display}").WithMargin(1, 0, 1, 0).Build();
+        btn.Click += (_, _) => _ = OpenForeignScan(info.ResolvedPath);
+        panel.AddControl(btn);
+    }
+
+    private async Task OpenForeignScan(string resolvedPath)
+    {
+        // Pass the resolved (symlink-followed) path so the inner modal's mount
+        // detection treats the remote fs as its own, scans normally, and doesn't
+        // flag every subdir as "foreign to itself".
+        FileEntry? subEntry = null;
+        try { subEntry = _fs.GetFileInfo(resolvedPath); } catch { }
+        if (subEntry == null) return;
+        await PropertiesModal.ShowAsync(WindowSystem, _fs, subEntry, Modal);
+    }
+
+    private static string FormatForeignLabel(string name, string format)
+    {
+        const int nameWidth = 16;
+        string shown = name.Length <= nameWidth ? name : name.Substring(0, nameWidth - 1) + "…";
+        string tag = string.IsNullOrEmpty(format) ? "fs" : format.ToLowerInvariant();
+        return $"{shown.PadRight(nameWidth)} {tag,8}";
     }
 
     /// <summary>
@@ -499,10 +589,18 @@ public class PropertiesModal : ModalBase<bool>
             var prefix = p.IsFinal
                 ? $"[green]done[/] [dim]in {_scanClock.Elapsed.TotalSeconds:F1}s[/]"
                 : "[dim]scanning…[/]";
-            _spaceStatus.SetContent(new List<string>
+            var line = $"  {prefix}  [dim]{FileEntry.FormatSize(p.BytesSoFar)}  {p.FilesScanned:N0} files[/]";
+            var lines = new List<string> { line };
+            if (p.IsFinal && _foreignChildren.Count > 0)
             {
-                $"  {prefix}  [dim]{FileEntry.FormatSize(p.BytesSoFar)}  {p.FilesScanned:N0} files[/]"
-            });
+                var names = string.Join(", ",
+                    _foreignChildren.Values
+                        .Select(f => SharpConsoleUI.Parsing.MarkupParser.Escape(f.Key))
+                        .OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+                var word = _foreignChildren.Count == 1 ? "subdir" : "subdirs";
+                lines.Add($"  [yellow]↪ {_foreignChildren.Count} {word} on other filesystems excluded:[/] [dim]{names}[/]");
+            }
+            _spaceStatus.SetContent(lines);
         }
         if (_permWarning != null && p.InaccessibleEntries > 0)
         {
@@ -519,13 +617,17 @@ public class PropertiesModal : ModalBase<bool>
             long total = Math.Max(p.BytesSoFar, 1);
             foreach (var (key, bar) in _childRows)
             {
+                // Foreign rows render the mount's own used% (set at build time);
+                // scan progress leaves them untouched so the card keeps telling
+                // the truth about that remote drive instead of "0 % of scanned".
+                if (_foreignChildren.ContainsKey(key)) continue;
+
                 if (!p.PerChildBytes.TryGetValue(key, out var bytes)) bytes = 0;
                 double share = bytes * 100.0 / total;
                 bar.Value = Math.Min(share, 100);
 
                 string display = key.Length == 0 ? "(files)" : key;
-                bool foreign = bar.Label.Contains("other fs");
-                bar.Label = FormatBreakdownLabel(display, foreign ? -1 : bytes);
+                bar.Label = FormatBreakdownLabel(display, bytes);
             }
 
             if (p.IsFinal && !_breakdownSorted)

@@ -53,6 +53,7 @@ public class FileSystemService : IFileSystemService
         if (!dir.Exists) return Array.Empty<FileEntry>();
 
         var entries = new List<FileEntry>();
+        var mountIndex = BuildMountIndex(path);
 
         try
         {
@@ -60,7 +61,7 @@ public class FileSystemService : IFileSystemService
             {
                 try
                 {
-                    entries.Add(CreateEntry(d));
+                    entries.Add(EnrichWithMount(CreateEntry(d), mountIndex));
                 }
                 catch (UnauthorizedAccessException) { }
                 catch (IOException) { }
@@ -80,6 +81,98 @@ public class FileSystemService : IFileSystemService
         catch (IOException) { }
 
         return entries;
+    }
+
+    // Snapshot of DriveInfo keyed by normalized mount path, plus the parent
+    // directory's own mount root. Used by ListDirectory to decide whether each
+    // child directory (after resolving symlinks) lands on a different filesystem
+    // than the parent — a common setup is `~/Downloads` being a symlink to an
+    // NFS mount at `/mnt/...`, where the path itself is not a mount but its
+    // target is.
+    private sealed record MountIndex(string ParentMount, Dictionary<string, DriveInfo> ByRoot);
+
+    private static MountIndex BuildMountIndex(string parentPath)
+    {
+        var byRoot = new Dictionary<string, DriveInfo>(StringComparer.Ordinal);
+        foreach (var d in DriveInfo.GetDrives())
+        {
+            if (!d.IsReady) continue;
+            try
+            {
+                var root = Path.TrimEndingDirectorySeparator(d.RootDirectory.FullName);
+                if (!byRoot.ContainsKey(root)) byRoot[root] = d;
+            }
+            catch { }
+        }
+        var parentResolved = ResolveFullTarget(parentPath);
+        var parentMount = FindMountRoot(parentResolved, byRoot.Keys);
+        return new MountIndex(parentMount, byRoot);
+    }
+
+    private static FileEntry EnrichWithMount(FileEntry entry, MountIndex idx)
+    {
+        if (!entry.IsDirectory) return entry;
+        var resolved = ResolveFullTarget(entry.FullPath);
+        var mount = FindMountRoot(resolved, idx.ByRoot.Keys);
+        if (!string.IsNullOrEmpty(mount) && !string.Equals(mount, idx.ParentMount, StringComparison.Ordinal))
+        {
+            string? format = null;
+            if (idx.ByRoot.TryGetValue(mount, out var drive))
+            {
+                try { format = drive.DriveFormat; } catch { }
+            }
+            return entry with { IsForeignMount = true, MountFormat = format };
+        }
+        return entry;
+    }
+
+    // Follows a symlink chain to its final target (or returns the normalized path
+    // if not a link). Wrapped in try/catch because broken/circular links throw.
+    internal static string ResolveFullTarget(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                var di = new DirectoryInfo(path);
+                if (di.LinkTarget != null)
+                {
+                    var target = di.ResolveLinkTarget(returnFinalTarget: true);
+                    if (target != null) return Path.TrimEndingDirectorySeparator(target.FullName);
+                }
+                return Path.TrimEndingDirectorySeparator(di.FullName);
+            }
+            if (File.Exists(path))
+            {
+                var fi = new FileInfo(path);
+                if (fi.LinkTarget != null)
+                {
+                    var target = fi.ResolveLinkTarget(returnFinalTarget: true);
+                    if (target != null) return Path.TrimEndingDirectorySeparator(target.FullName);
+                }
+                return Path.TrimEndingDirectorySeparator(fi.FullName);
+            }
+        }
+        catch { }
+        try { return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)); }
+        catch { return path; }
+    }
+
+    // Longest-prefix match of a resolved path against known mount roots.
+    internal static string FindMountRoot(string resolvedPath, IEnumerable<string> mountRoots)
+    {
+        string best = "";
+        int bestLen = -1;
+        foreach (var root in mountRoots)
+        {
+            if (string.IsNullOrEmpty(root)) continue;
+            if (resolvedPath.Length < root.Length) continue;
+            if (!resolvedPath.StartsWith(root, StringComparison.Ordinal)) continue;
+            if (resolvedPath.Length != root.Length &&
+                resolvedPath[root.Length] != Path.DirectorySeparatorChar) continue;
+            if (root.Length > bestLen) { bestLen = root.Length; best = root; }
+        }
+        return best;
     }
 
     public FileEntry GetFileInfo(string path)
@@ -270,34 +363,108 @@ public class FileSystemService : IFileSystemService
         IProgress<(long bytes, long total)>? progress, CancellationToken ct)
     {
         if (Directory.Exists(source))
-        {
             await CopyDirectoryAsync(source, dest, overwrite, progress, ct);
-        }
         else
+            await CopyFileStreamingAsync(source, dest, overwrite, progress, ct);
+    }
+
+    public async Task MoveAsync(string source, string dest, bool overwrite,
+        IProgress<(long bytes, long total)>? progress, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        bool isDir = Directory.Exists(source);
+
+        // Fast path: same mount → rename (atomic, microseconds even for GB-sized trees).
+        if (AreSameMount(source, dest))
         {
-            var fileInfo = new FileInfo(source);
-            var total = fileInfo.Length;
-            using var sourceStream = File.OpenRead(source);
-            using var destStream = File.Create(dest);
-            var buffer = new byte[81920];
-            long copied = 0;
-            int bytesRead;
-            while ((bytesRead = await sourceStream.ReadAsync(buffer, ct)) > 0)
-            {
-                await destStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
-                copied += bytesRead;
-                progress?.Report((copied, total));
-            }
+            if (isDir) Directory.Move(source, dest);
+            else File.Move(source, dest, overwrite);
+            return;
+        }
+
+        // Cross-mount: .NET's File.Move silently degrades to synchronous copy+delete,
+        // blocking the thread with no cancellation and no progress. Do it ourselves
+        // so paste stays cancellable and the UI stays responsive.
+        try
+        {
+            if (isDir)
+                await CopyDirectoryAsync(source, dest, overwrite, progress, ct);
+            else
+                await CopyFileStreamingAsync(source, dest, overwrite, progress, ct);
+        }
+        catch
+        {
+            TryDeletePath(dest);
+            throw;
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        if (isDir) Directory.Delete(source, recursive: true);
+        else File.Delete(source);
+    }
+
+    private static async Task CopyFileStreamingAsync(string source, string dest, bool overwrite,
+        IProgress<(long bytes, long total)>? progress, CancellationToken ct)
+    {
+        var fileInfo = new FileInfo(source);
+        var total = fileInfo.Length;
+        var mode = overwrite ? FileMode.Create : FileMode.CreateNew;
+        using var sourceStream = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read,
+            81920, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        using var destStream = new FileStream(dest, mode, FileAccess.Write, FileShare.None,
+            81920, FileOptions.Asynchronous);
+        var buffer = new byte[81920];
+        long copied = 0;
+        int bytesRead;
+        while ((bytesRead = await sourceStream.ReadAsync(buffer, ct)) > 0)
+        {
+            await destStream.WriteAsync(buffer.AsMemory(0, bytesRead), ct);
+            copied += bytesRead;
+            progress?.Report((copied, total));
         }
     }
 
-    public Task MoveAsync(string source, string dest, bool overwrite, CancellationToken ct)
+    private static void TryDeletePath(string path)
     {
-        if (Directory.Exists(source))
-            Directory.Move(source, dest);
-        else
-            File.Move(source, dest, overwrite);
-        return Task.CompletedTask;
+        try
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+            else if (File.Exists(path)) File.Delete(path);
+        }
+        catch { }
+    }
+
+    internal static bool AreSameMount(string a, string b)
+    {
+        var ma = GetMountPoint(a);
+        var mb = GetMountPoint(b);
+        return !string.IsNullOrEmpty(ma) && ma == mb;
+    }
+
+    private static string GetMountPoint(string path)
+    {
+        try
+        {
+            var full = Path.GetFullPath(path);
+            var withSep = full.EndsWith(Path.DirectorySeparatorChar) ? full : full + Path.DirectorySeparatorChar;
+            string best = "";
+            int bestLen = -1;
+            foreach (var d in DriveInfo.GetDrives())
+            {
+                if (!d.IsReady) continue;
+                var root = Path.TrimEndingDirectorySeparator(d.Name);
+                if (string.IsNullOrEmpty(root)) root = Path.DirectorySeparatorChar.ToString();
+                var rootWithSep = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+                if (withSep.StartsWith(rootWithSep, StringComparison.Ordinal) && root.Length > bestLen)
+                {
+                    bestLen = root.Length;
+                    best = root;
+                }
+            }
+            return best;
+        }
+        catch { return ""; }
     }
 
     public Task DeleteAsync(string path, bool recursive, CancellationToken ct)
@@ -369,8 +536,17 @@ public class FileSystemService : IFileSystemService
         // Other keys = names of immediate child directories of the scan root.
         var childBytes = new Dictionary<string, long>(StringComparer.Ordinal) { [""] = 0 };
 
-        // Foreign-mount prefixes under this scan root — never descended into.
-        var foreignMounts = GetForeignMountsUnder(path);
+        // Snapshot the mount table once. A child dir is "foreign" when its resolved
+        // target's mount root differs from the scan root's resolved mount — this
+        // catches both literal mount subdirs and symlinks that hop filesystems
+        // (e.g. ~/Downloads → /mnt/nick/Downloads on NFS).
+        var mountRoots = new List<string>();
+        foreach (var d in DriveInfo.GetDrives())
+        {
+            if (!d.IsReady) continue;
+            try { mountRoots.Add(Path.TrimEndingDirectorySeparator(d.RootDirectory.FullName)); } catch { }
+        }
+        var ownMount = FindMountRoot(ResolveFullTarget(path), mountRoots);
 
         // Each stack frame carries the top-level-child key its files belong to.
         var stack = new Stack<(string Dir, string Key)>();
@@ -406,8 +582,15 @@ public class FileSystemService : IFileSystemService
 
                             var sub = it.Current;
 
-                            // Cross-filesystem guard.
-                            if (IsUnderForeignMount(sub, foreignMounts)) continue;
+                            // Cross-filesystem guard: skip if resolved target is on a
+                            // different mount than the scan root.
+                            if (!string.IsNullOrEmpty(ownMount))
+                            {
+                                var subMount = FindMountRoot(ResolveFullTarget(sub), mountRoots);
+                                if (!string.IsNullOrEmpty(subMount) &&
+                                    !string.Equals(subMount, ownMount, StringComparison.Ordinal))
+                                    continue;
+                            }
 
                             // When descending from the scan root, establish the top-level key.
                             string childKey;
@@ -531,25 +714,76 @@ public class FileSystemService : IFileSystemService
         return false;
     }
 
-    public IDisposable WatchDirectory(string path, Action<FileSystemChangeEvent> onChange)
+    public IDirectoryWatcher WatchDirectory(string path, Action<FileSystemChangeEvent> onChange)
+        => new DebouncedDirectoryWatcher(path, onChange, debounceMs: 400);
+
+    // Coalesces FileSystemWatcher events with a trailing-edge debounce. Large writes on
+    // slow filesystems (NFS, USB) emit dozens of Changed events as Size/LastWrite tick;
+    // without this, each one triggered a synchronous directory listing on the UI thread
+    // and starved the main loop. Pause/Resume lets the caller suppress self-inflicted
+    // events during a paste whose destination is the watched directory.
+    private sealed class DebouncedDirectoryWatcher : IDirectoryWatcher
     {
-        var watcher = new FileSystemWatcher(path)
+        private readonly FileSystemWatcher _fsw;
+        private readonly Action<FileSystemChangeEvent> _onChange;
+        private readonly Timer _timer;
+        private readonly int _debounceMs;
+        private readonly object _lock = new();
+        private FileSystemChangeEvent? _pending;
+        private volatile bool _paused;
+        private volatile bool _disposed;
+
+        public DebouncedDirectoryWatcher(string path, Action<FileSystemChangeEvent> onChange, int debounceMs)
         {
-            NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName |
-                           NotifyFilters.LastWrite | NotifyFilters.Size,
-            IncludeSubdirectories = false,
-            EnableRaisingEvents = true
-        };
+            _onChange = onChange;
+            _debounceMs = debounceMs;
+            _timer = new Timer(Fire, null, Timeout.Infinite, Timeout.Infinite);
 
-        void Handler(object s, FileSystemEventArgs e) =>
-            onChange(new FileSystemChangeEvent(e.FullPath, e.ChangeType));
+            _fsw = new FileSystemWatcher(path)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName |
+                               NotifyFilters.LastWrite | NotifyFilters.Size,
+                IncludeSubdirectories = false,
+                EnableRaisingEvents = true
+            };
+            _fsw.Created += (_, e) => Schedule(new FileSystemChangeEvent(e.FullPath, e.ChangeType));
+            _fsw.Deleted += (_, e) => Schedule(new FileSystemChangeEvent(e.FullPath, e.ChangeType));
+            _fsw.Changed += (_, e) => Schedule(new FileSystemChangeEvent(e.FullPath, e.ChangeType));
+            _fsw.Renamed += (_, e) => Schedule(new FileSystemChangeEvent(e.FullPath, e.ChangeType));
+        }
 
-        watcher.Created += Handler;
-        watcher.Deleted += Handler;
-        watcher.Changed += Handler;
-        watcher.Renamed += (s, e) => onChange(new FileSystemChangeEvent(e.FullPath, e.ChangeType));
+        private void Schedule(FileSystemChangeEvent ev)
+        {
+            if (_paused || _disposed) return;
+            lock (_lock) _pending = ev;
+            _timer.Change(_debounceMs, Timeout.Infinite);
+        }
 
-        return watcher;
+        private void Fire(object? _)
+        {
+            if (_paused || _disposed) return;
+            FileSystemChangeEvent? ev;
+            lock (_lock) { ev = _pending; _pending = null; }
+            if (ev is null) return;
+            try { _onChange(ev); } catch { }
+        }
+
+        public void Pause()
+        {
+            _paused = true;
+            _timer.Change(Timeout.Infinite, Timeout.Infinite);
+            lock (_lock) _pending = null;
+        }
+
+        public void Resume() => _paused = false;
+
+        public void Dispose()
+        {
+            _disposed = true;
+            try { _fsw.EnableRaisingEvents = false; } catch { }
+            _fsw.Dispose();
+            _timer.Dispose();
+        }
     }
 
     private static FileEntry CreateEntry(FileSystemInfo info)

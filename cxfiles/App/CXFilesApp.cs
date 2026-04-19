@@ -158,13 +158,16 @@ public partial class CXFilesApp
         var watchedTab = tab;
         try
         {
-            tab.FileWatcher = _fs.WatchDirectory(path, _ => _ws.EnqueueOnUIThread(() =>
+            tab.FileWatcher = _fs.WatchDirectory(path, _ =>
             {
                 if (watchedTab.Search.Restore != null) return; // search active — leave it alone
-                watchedTab.FileList.Refresh();
-                if (_tabs.IndexOf(watchedTab) == _tabControl.ActiveTabIndex)
-                    UpdateStatusLine();
-            }));
+                watchedTab.FileList.RefreshAsync(action => _ws.EnqueueOnUIThread(() =>
+                {
+                    action();
+                    if (_tabs.IndexOf(watchedTab) == _tabControl.ActiveTabIndex)
+                        UpdateStatusLine();
+                }));
+            });
         }
         catch { /* watcher may fail on some filesystems */ }
     }
@@ -795,7 +798,7 @@ public partial class CXFilesApp
                     op.CurrentFile = Path.GetFileName(src);
                     var dest = Path.Combine(targetFolder, Path.GetFileName(src));
                     if (isCut)
-                        await _fs.MoveAsync(src, dest, false, op.Cts.Token);
+                        await _fs.MoveAsync(src, dest, false, null, op.Cts.Token);
                     else
                         await _fs.CopyAsync(src, dest, false, null, op.Cts.Token);
                 }

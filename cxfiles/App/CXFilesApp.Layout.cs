@@ -60,7 +60,7 @@ public partial class CXFilesApp
         _tabControl.ShowTabHeader = true;
 
         // Create first tab
-        var firstTab = CreateTab(_config.Config.DefaultPath);
+        var firstTab = CreateTab(_startupPath);
         _tabs.Add(firstTab);
         _tabControl.AddTab(firstTab.TabTitle, firstTab.Container, isClosable: false);
 

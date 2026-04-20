@@ -21,6 +21,7 @@ public partial class CXFilesApp
     private readonly ITrashService _trash;
     private readonly SudoService _sudo;
     private readonly LauncherService _launcher;
+    private readonly string _startupPath;
     private Window? _mainWindow;
 
     // UI Components
@@ -53,7 +54,8 @@ public partial class CXFilesApp
     private FileListPanel ActiveFileList => ActiveTab.FileList;
 
     public CXFilesApp(ConsoleWindowSystem ws, IFileSystemService fs, IConfigService config,
-        OperationManager operations, ITrashService trash, SudoService sudo, LauncherService launcher)
+        OperationManager operations, ITrashService trash, SudoService sudo, LauncherService launcher,
+        string? startupPath = null)
     {
         _ws = ws;
         _fs = fs;
@@ -62,13 +64,16 @@ public partial class CXFilesApp
         _trash = trash;
         _sudo = sudo;
         _launcher = launcher;
+        _startupPath = !string.IsNullOrWhiteSpace(startupPath) && fs.DirectoryExists(startupPath)
+            ? startupPath
+            : config.Config.DefaultPath;
         _detailVisible = config.Config.ShowDetailPanel;
     }
 
     public void Run()
     {
         BuildUI();
-        NavigateTo(_config.Config.DefaultPath);
+        NavigateTo(_startupPath);
         _ws.AddWindow(_mainWindow!);
         _ws.Run();
         DisposeTerminal();

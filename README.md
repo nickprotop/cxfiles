@@ -47,6 +47,14 @@ cd cxfiles
 cxfiles
 ```
 
+### Usage
+
+```bash
+cxfiles              # open at the configured default path (home by default)
+cxfiles ~/Downloads  # open at a specific folder (supports ~, relative, absolute)
+cxfiles ./           # open at the current working directory
+```
+
 ## Features
 
 | | |

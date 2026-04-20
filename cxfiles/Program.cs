@@ -28,6 +28,29 @@ class Program
             return 1;
         }
 
+        string? startupPath = null;
+        if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
+        {
+            var raw = args[0];
+            if (raw == "~" || raw.StartsWith("~/") || raw.StartsWith("~\\"))
+                raw = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                    + raw.Substring(1);
+            try
+            {
+                startupPath = Path.GetFullPath(raw);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"cxfiles: invalid path '{args[0]}': {ex.Message}");
+                return 1;
+            }
+            if (!Directory.Exists(startupPath))
+            {
+                Console.Error.WriteLine($"cxfiles: not a directory: {startupPath}");
+                return 1;
+            }
+        }
+
         var services = new ServiceCollection();
 
         // Window system
@@ -61,7 +84,8 @@ class Program
             provider.GetRequiredService<OperationManager>(),
             provider.GetRequiredService<ITrashService>(),
             provider.GetRequiredService<SudoService>(),
-            provider.GetRequiredService<LauncherService>());
+            provider.GetRequiredService<LauncherService>(),
+            startupPath);
 
         app.Run();
 

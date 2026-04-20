@@ -70,6 +70,7 @@ public partial class CXFilesApp
 
     private void WireSearchBar(TabState tab)
     {
+        tab.SearchBar.UpClicked += NavigateUp;
         tab.SearchBar.QueryChanged += q => StartSearch(tab, q);
         tab.SearchBar.RecurseToggled += value =>
         {

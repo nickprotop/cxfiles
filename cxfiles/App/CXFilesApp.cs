@@ -1006,7 +1006,6 @@ public partial class CXFilesApp
         var multiSelect = checkedCount > 1;
 
         AddToolbarButton("◈ Open [grey50]Enter[/]", OpenSelected);
-        AddToolbarButton("↑ Up [grey50]Bksp[/]", NavigateUp);
         if (_tabs.Count < _config.Config.MaxTabs)
             AddToolbarButton("❒ New Tab [grey50]^T[/]", NewTab);
         _toolbar.AddItem(new SeparatorControl());

@@ -9,6 +9,8 @@ namespace CXFiles.UI.Components;
 public sealed class SearchBar
 {
     private readonly PromptControl _prompt;
+    private readonly ButtonControl _upButton;
+    private readonly SeparatorControl _separator;
     private readonly ButtonControl _recurseButton;
     private readonly ButtonControl _clearButton;
     private readonly HorizontalGridControl _grid;
@@ -22,6 +24,7 @@ public sealed class SearchBar
     public event Action? Submitted;
     public event Action? Cleared;
     public event Action<bool>? RecurseToggled;
+    public event Action? UpClicked;
 
     public string Query
     {
@@ -42,6 +45,21 @@ public sealed class SearchBar
 
     public SearchBar()
     {
+        _upButton = new ButtonControl
+        {
+            Text = "↑ Up [grey50]Bksp[/]",
+            BackgroundColor = new Color(28, 36, 56),
+            ForegroundColor = new Color(180, 200, 240),
+            FocusedBackgroundColor = new Color(60, 80, 120),
+            FocusedForegroundColor = new Color(220, 235, 255),
+        };
+        _upButton.Click += (_, _) => UpClicked?.Invoke();
+
+        _separator = new SeparatorControl
+        {
+            ForegroundColor = Color.Grey27,
+        };
+
         _recurseButton = new ButtonControl
         {
             Text = "[[R]]", // escaped: renders as [R] (Spectre markup eats single brackets)
@@ -93,6 +111,8 @@ public sealed class SearchBar
 
         _grid = Controls.HorizontalGrid()
             .WithAlignment(HorizontalAlignment.Stretch)
+            .Column(col => col.Width(12).Add(_upButton))
+            .Column(col => col.Width(1).Add(_separator))
             .Column(col => col.Width(5).Add(_recurseButton))
             .Column(col => col.Flex(1.0).Add(_prompt))
             .Column(col => col.Width(7).Add(_clearButton))
@@ -128,8 +148,8 @@ public sealed class SearchBar
         // Also collapse the grid column so the prompt extends to the right edge
         // when there's no clear button to show.
         var cols = _grid.Columns;
-        if (cols.Count >= 3)
-            cols[2].Visible = visible;
+        if (cols.Count >= 5)
+            cols[4].Visible = visible;
     }
 
     public void SetRecurseOverridden(bool overridden)

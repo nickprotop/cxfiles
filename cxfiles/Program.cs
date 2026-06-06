@@ -59,7 +59,8 @@ class Program
             options: new ConsoleWindowSystemOptions(
                 ShowTopPanel: false,
                 ShowBottomPanel: false,
-                WindowCycleKey: null));
+                WindowCycleKey: null,
+                InstallSynchronizationContext: true));
         services.AddSingleton(ws);
 
         // Services

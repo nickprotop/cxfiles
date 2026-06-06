@@ -569,7 +569,10 @@ public class PropertiesModal : ModalBase<bool>
                 // Surface on UI thread
                 if (_spaceStatus != null)
                 {
-                    try { _spaceStatus.SetContent(new List<string> { "[red]scan failed[/]" }); } catch { }
+                    WindowSystem.EnqueueOnUIThread(() =>
+                    {
+                        try { _spaceStatus.SetContent(new List<string> { "[red]scan failed[/]" }); } catch { }
+                    });
                 }
             }
         });
@@ -579,63 +582,70 @@ public class PropertiesModal : ModalBase<bool>
 
     private void OnScanProgress(DirectorySizeProgress p)
     {
-        double driveSharePct = _driveTotal > 0 ? p.BytesSoFar * 100.0 / _driveTotal : 0;
-        if (_folderBar != null)
+        // Progress<T> normally posts to the captured SynchronizationContext, but the
+        // app can run with InstallSynchronizationContext disabled (no context to
+        // capture), in which case the callback runs on a thread-pool thread. Marshal
+        // every control mutation explicitly so this is correct under both settings.
+        WindowSystem.EnqueueOnUIThread(() =>
         {
-            _folderBar.Value = Math.Min(driveSharePct, 100);
-        }
-        if (_spaceStatus != null)
-        {
-            var prefix = p.IsFinal
-                ? $"[green]done[/] [dim]in {_scanClock.Elapsed.TotalSeconds:F1}s[/]"
-                : "[dim]scanning…[/]";
-            var line = $"  {prefix}  [dim]{FileEntry.FormatSize(p.BytesSoFar)}  {p.FilesScanned:N0} files[/]";
-            var lines = new List<string> { line };
-            if (p.IsFinal && _foreignChildren.Count > 0)
+            double driveSharePct = _driveTotal > 0 ? p.BytesSoFar * 100.0 / _driveTotal : 0;
+            if (_folderBar != null)
             {
-                var names = string.Join(", ",
-                    _foreignChildren.Values
-                        .Select(f => SharpConsoleUI.Parsing.MarkupParser.Escape(f.Key))
-                        .OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
-                var word = _foreignChildren.Count == 1 ? "subdir" : "subdirs";
-                lines.Add($"  [yellow]↪ {_foreignChildren.Count} {word} on other filesystems excluded:[/] [dim]{names}[/]");
+                _folderBar.Value = Math.Min(driveSharePct, 100);
             }
-            _spaceStatus.SetContent(lines);
-        }
-        if (_permWarning != null && p.InaccessibleEntries > 0)
-        {
-            _permWarning.Visible = true;
-            var word = p.InaccessibleEntries == 1 ? "entry" : "entries";
-            _permWarning.SetContent(new List<string>
+            if (_spaceStatus != null)
             {
-                $"  [yellow]⚠ {p.InaccessibleEntries:N0} {word} skipped (permission denied)[/]"
-            });
-        }
-
-        if (p.PerChildBytes != null && _childRows.Count > 0)
-        {
-            long total = Math.Max(p.BytesSoFar, 1);
-            foreach (var (key, bar) in _childRows)
+                var prefix = p.IsFinal
+                    ? $"[green]done[/] [dim]in {_scanClock.Elapsed.TotalSeconds:F1}s[/]"
+                    : "[dim]scanning…[/]";
+                var line = $"  {prefix}  [dim]{FileEntry.FormatSize(p.BytesSoFar)}  {p.FilesScanned:N0} files[/]";
+                var lines = new List<string> { line };
+                if (p.IsFinal && _foreignChildren.Count > 0)
+                {
+                    var names = string.Join(", ",
+                        _foreignChildren.Values
+                            .Select(f => SharpConsoleUI.Parsing.MarkupParser.Escape(f.Key))
+                            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase));
+                    var word = _foreignChildren.Count == 1 ? "subdir" : "subdirs";
+                    lines.Add($"  [yellow]↪ {_foreignChildren.Count} {word} on other filesystems excluded:[/] [dim]{names}[/]");
+                }
+                _spaceStatus.SetContent(lines);
+            }
+            if (_permWarning != null && p.InaccessibleEntries > 0)
             {
-                // Foreign rows render the mount's own used% (set at build time);
-                // scan progress leaves them untouched so the card keeps telling
-                // the truth about that remote drive instead of "0 % of scanned".
-                if (_foreignChildren.ContainsKey(key)) continue;
-
-                if (!p.PerChildBytes.TryGetValue(key, out var bytes)) bytes = 0;
-                double share = bytes * 100.0 / total;
-                bar.Value = Math.Min(share, 100);
-
-                string display = key.Length == 0 ? "(files)" : key;
-                bar.Label = FormatBreakdownLabel(display, bytes);
+                _permWarning.Visible = true;
+                var word = p.InaccessibleEntries == 1 ? "entry" : "entries";
+                _permWarning.SetContent(new List<string>
+                {
+                    $"  [yellow]⚠ {p.InaccessibleEntries:N0} {word} skipped (permission denied)[/]"
+                });
             }
 
-            if (p.IsFinal && !_breakdownSorted)
+            if (p.PerChildBytes != null && _childRows.Count > 0)
             {
-                _breakdownSorted = true;
-                ReflowBreakdown(p.PerChildBytes, total);
+                long total = Math.Max(p.BytesSoFar, 1);
+                foreach (var (key, bar) in _childRows)
+                {
+                    // Foreign rows render the mount's own used% (set at build time);
+                    // scan progress leaves them untouched so the card keeps telling
+                    // the truth about that remote drive instead of "0 % of scanned".
+                    if (_foreignChildren.ContainsKey(key)) continue;
+
+                    if (!p.PerChildBytes.TryGetValue(key, out var bytes)) bytes = 0;
+                    double share = bytes * 100.0 / total;
+                    bar.Value = Math.Min(share, 100);
+
+                    string display = key.Length == 0 ? "(files)" : key;
+                    bar.Label = FormatBreakdownLabel(display, bytes);
+                }
+
+                if (p.IsFinal && !_breakdownSorted)
+                {
+                    _breakdownSorted = true;
+                    ReflowBreakdown(p.PerChildBytes, total);
+                }
             }
-        }
+        });
     }
 
     private void ReflowBreakdown(IReadOnlyDictionary<string, long> finalBytes, long total)
@@ -706,7 +716,7 @@ public class PropertiesModal : ModalBase<bool>
         }
     }
 
-    private static string HashFile(string path, HashKind kind, ProgressBarControl progress, CancellationToken ct)
+    private string HashFile(string path, HashKind kind, ProgressBarControl progress, CancellationToken ct)
     {
         using var algo = kind == HashKind.Md5 ? (HashAlgorithm)MD5.Create() : SHA256.Create();
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.SequentialScan);
@@ -723,11 +733,13 @@ public class PropertiesModal : ModalBase<bool>
             if (sw.ElapsedMilliseconds - lastReport >= 100)
             {
                 lastReport = sw.ElapsedMilliseconds;
-                progress.Value = total;
+                long snapshot = total;
+                WindowSystem.EnqueueOnUIThread(() => progress.Value = snapshot);
             }
         }
         algo.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
-        progress.Value = total;
+        long finalTotal = total;
+        WindowSystem.EnqueueOnUIThread(() => progress.Value = finalTotal);
         return Convert.ToHexString(algo.Hash!).ToLowerInvariant();
     }
 

@@ -23,6 +23,10 @@ public class WindowsTrashService : ITrashService
         return Task.CompletedTask;
     }
 
+    public Task TrashWithMoverAsync(
+        string path, Func<string, string, CancellationToken, Task> mover, CancellationToken ct) =>
+        throw new NotSupportedException("Elevated trash is not supported on Windows");
+
     public Task RestoreAsync(string trashedName, CancellationToken ct) =>
         throw new NotSupportedException("Restore from Windows Recycle Bin is not supported");
 

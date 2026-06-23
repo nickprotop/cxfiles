@@ -15,6 +15,7 @@ public class CXFilesConfig
     public bool AutoSelectFirstItem { get; set; } = false;
     public string EditorCommand { get; set; } = "";
     public bool AllowSudoElevation { get; set; } = false;
+    public bool SuppressSudoHint { get; set; } = false;
     public int TreePanelWidth { get; set; } = 25;
     public int DetailPanelWidth { get; set; } = 30;
     public List<BookmarkEntry> Bookmarks { get; set; } = new();

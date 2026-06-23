@@ -299,6 +299,11 @@ public partial class CXFilesApp
         if (action == DeleteAction.Cancel) return;
 
         bool useTrash = action == DeleteAction.Trash;
+        ExecuteDelete(entries, useTrash);
+    }
+
+    private void ExecuteDelete(List<FileEntry> entries, bool useTrash)
+    {
         var verb = useTrash ? "Trashing" : "Deleting";
         var desc = entries.Count == 1 ? $"{verb} {entries[0].Name}" : $"{verb} {entries.Count} items";
         var op = _operations.StartOperation(Services.OperationType.Delete, desc);
@@ -325,20 +330,26 @@ public partial class CXFilesApp
             {
                 _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            catch (UnauthorizedAccessException)
             {
-                if (useTrash)
-                {
-                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, "Permission denied");
-                    _ws.EnqueueOnUIThread(() => _ws.NotificationStateService.ShowNotification(
-                        "Cannot trash", "Insufficient permissions to move to trash. Use Delete to permanently remove with sudo.",
-                        SharpConsoleUI.Core.NotificationSeverity.Warning));
-                }
-                else
+                if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
                 {
                     _operations.RemoveOperation(op);
                     var sudoEntries = entries;
-                    _ws.EnqueueOnUIThread(() => PromptSudoDelete(sudoEntries));
+                    if (useTrash)
+                        _ws.EnqueueOnUIThread(() => PromptSudoTrash(sudoEntries));
+                    else
+                        _ws.EnqueueOnUIThread(() => PromptSudoDelete(sudoEntries));
+                }
+                else if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+                {
+                    _operations.RemoveOperation(op);
+                    var hintOp = useTrash ? "Move to trash" : "Delete";
+                    _ws.EnqueueOnUIThread(() => _ = ShowElevationHint(hintOp));
+                }
+                else
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, "Permission denied");
                 }
             }
             catch (Exception ex)
@@ -347,6 +358,18 @@ public partial class CXFilesApp
             }
             _ws.EnqueueOnUIThread(UpdateStatusLine);
         });
+    }
+
+    private async Task ShowElevationHint(string operation)
+    {
+        var result = await UI.Modals.ElevationHintModal.ShowAsync(_ws, operation, _mainWindow);
+        if (result.DontShowAgain)
+        {
+            _config.Config.SuppressSudoHint = true;
+            _config.Save();
+        }
+        if (result.OpenSettings)
+            await ShowOptionsAsync();
     }
 
     private void PromptSudoDelete(List<FileEntry> entries)
@@ -404,6 +427,62 @@ public partial class CXFilesApp
         });
     }
 
+    private void PromptSudoTrash(List<FileEntry> entries)
+    {
+        var commonDir = Path.GetDirectoryName(entries[0].FullPath) ?? "";
+        string what;
+        if (entries.Count == 1)
+        {
+            var type = entries[0].IsDirectory ? "folder" : "file";
+            what = $"{type} \"{entries[0].Name}\"";
+        }
+        else
+            what = $"{entries.Count} items";
+
+        var sudoDesc = $"Move {what} in {commonDir} to trash\n\nThis requires elevated privileges (sudo mv).";
+
+        UI.Modals.SudoDialog.Show(sudoDesc, _ws, result =>
+        {
+            if (result.Cancelled || !result.Success) return;
+
+            var desc = entries.Count == 1
+                ? $"Trashing {entries[0].Name} (sudo)"
+                : $"Trashing {entries.Count} items (sudo)";
+            var op = _operations.StartOperation(Services.OperationType.Delete, desc);
+            UpdateStatusLine();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    foreach (var entry in entries)
+                    {
+                        op.Cts.Token.ThrowIfCancellationRequested();
+                        op.CurrentFile = entry.Name;
+
+                        await _trash.TrashWithMoverAsync(entry.FullPath, async (src, dest, token) =>
+                        {
+                            var (ok, err) = await _sudo.MoveAsync(src, dest, result.Password, token);
+                            if (!ok)
+                                throw new InvalidOperationException(err ?? "sudo move failed");
+                        }, op.Cts.Token);
+                    }
+                    _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                    _ws.EnqueueOnUIThread(Refresh);
+                }
+                catch (OperationCanceledException)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+                }
+                catch (Exception ex)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+                }
+                _ws.EnqueueOnUIThread(UpdateStatusLine);
+            });
+        });
+    }
+
     private async Task RenameSelectedAsync()
     {
         var entry = ActiveFileList.GetSelectedEntry();
@@ -418,24 +497,36 @@ public partial class CXFilesApp
                 _fs.Rename(entry.FullPath, newName);
                 Refresh();
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            catch (UnauthorizedAccessException)
             {
-                var desc = $"Rename \"{entry.Name}\" to \"{newName}\" in {Path.GetDirectoryName(entry.FullPath)}\n\nThis requires elevated privileges (sudo mv).";
-                var capturedPath = entry.FullPath;
-                UI.Modals.SudoDialog.Show(desc, _ws, result =>
+                if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
                 {
-                    if (result.Cancelled || !result.Success) return;
-                    _ = Task.Run(async () =>
+                    var desc = $"Rename \"{entry.Name}\" to \"{newName}\" in {Path.GetDirectoryName(entry.FullPath)}\n\nThis requires elevated privileges (sudo mv).";
+                    var capturedPath = entry.FullPath;
+                    UI.Modals.SudoDialog.Show(desc, _ws, result =>
                     {
-                        var (ok, err) = await _sudo.RenameAsync(capturedPath, newPath, result.Password, CancellationToken.None);
-                        _ws.EnqueueOnUIThread(() =>
+                        if (result.Cancelled || !result.Success) return;
+                        _ = Task.Run(async () =>
                         {
-                            if (ok) Refresh();
-                            else _ws.NotificationStateService.ShowNotification(
-                                "Error", $"Rename failed: {err}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                            var (ok, err) = await _sudo.RenameAsync(capturedPath, newPath, result.Password, CancellationToken.None);
+                            _ws.EnqueueOnUIThread(() =>
+                            {
+                                if (ok) Refresh();
+                                else _ws.NotificationStateService.ShowNotification(
+                                    "Error", $"Rename failed: {err}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                            });
                         });
                     });
-                });
+                }
+                else if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+                {
+                    await ShowElevationHint("Rename");
+                }
+                else
+                {
+                    _ws.NotificationStateService.ShowNotification(
+                        "Error", "Rename failed: Permission denied", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                }
             }
             catch (Exception ex)
             {
@@ -532,12 +623,25 @@ public partial class CXFilesApp
             {
                 _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            catch (UnauthorizedAccessException)
             {
-                _operations.RemoveOperation(op);
-                var sudoPaths = paths;
-                var sudoCut = isCut;
-                _ws.EnqueueOnUIThread(() => PromptSudoPaste(sudoPaths, sudoCut, destDir));
+                if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+                {
+                    _operations.RemoveOperation(op);
+                    var sudoPaths = paths;
+                    var sudoCut = isCut;
+                    _ws.EnqueueOnUIThread(() => PromptSudoPaste(sudoPaths, sudoCut, destDir));
+                }
+                else if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+                {
+                    _operations.RemoveOperation(op);
+                    var hintOp = isCut ? "Move" : "Copy";
+                    _ws.EnqueueOnUIThread(() => _ = ShowElevationHint(hintOp));
+                }
+                else
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, "Permission denied");
+                }
             }
             catch (Exception ex)
             {
@@ -663,27 +767,39 @@ public partial class CXFilesApp
                     _fs.CreateFile(path);
                 Refresh();
             }
-            catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            catch (UnauthorizedAccessException)
             {
-                var type = isDir ? "folder" : "file";
-                var cmd = isDir ? "sudo mkdir" : "sudo touch";
-                var desc = $"Create {type} \"{result.Name}\" in {ActiveTab.Path}\n\nThis requires elevated privileges ({cmd}).";
-                UI.Modals.SudoDialog.Show(desc, _ws, sudoResult =>
+                if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
                 {
-                    if (sudoResult.Cancelled || !sudoResult.Success) return;
-                    _ = Task.Run(async () =>
+                    var type = isDir ? "folder" : "file";
+                    var cmd = isDir ? "sudo mkdir" : "sudo touch";
+                    var desc = $"Create {type} \"{result.Name}\" in {ActiveTab.Path}\n\nThis requires elevated privileges ({cmd}).";
+                    UI.Modals.SudoDialog.Show(desc, _ws, sudoResult =>
                     {
-                        var (ok, err) = isDir
-                            ? await _sudo.CreateDirectoryAsync(path, sudoResult.Password, CancellationToken.None)
-                            : await _sudo.CreateFileAsync(path, sudoResult.Password, CancellationToken.None);
-                        _ws.EnqueueOnUIThread(() =>
+                        if (sudoResult.Cancelled || !sudoResult.Success) return;
+                        _ = Task.Run(async () =>
                         {
-                            if (ok) Refresh();
-                            else _ws.NotificationStateService.ShowNotification(
-                                "Error", $"Create failed: {err}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                            var (ok, err) = isDir
+                                ? await _sudo.CreateDirectoryAsync(path, sudoResult.Password, CancellationToken.None)
+                                : await _sudo.CreateFileAsync(path, sudoResult.Password, CancellationToken.None);
+                            _ws.EnqueueOnUIThread(() =>
+                            {
+                                if (ok) Refresh();
+                                else _ws.NotificationStateService.ShowNotification(
+                                    "Error", $"Create failed: {err}", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                            });
                         });
                     });
-                });
+                }
+                else if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+                {
+                    await ShowElevationHint(isDir ? "Create folder" : "Create file");
+                }
+                else
+                {
+                    _ws.NotificationStateService.ShowNotification(
+                        "Error", "Create failed: Permission denied", SharpConsoleUI.Core.NotificationSeverity.Danger);
+                }
             }
             catch (Exception ex)
             {

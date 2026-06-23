@@ -1071,11 +1071,21 @@ public partial class CXFilesApp
             await _trash.RestoreAsync(entry.TrashedName, CancellationToken.None);
             _operations.CompleteOperation(op, Services.OperationStatus.Completed);
         }
-        catch (UnauthorizedAccessException) when (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+        catch (UnauthorizedAccessException)
         {
-            _operations.RemoveOperation(op);
-            PromptSudoRestore(entry);
-            return;
+            if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            {
+                _operations.RemoveOperation(op);
+                PromptSudoRestore(entry);
+                return;
+            }
+            if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+            {
+                _operations.RemoveOperation(op);
+                await ShowElevationHint("Restore");
+                return;
+            }
+            _operations.CompleteOperation(op, Services.OperationStatus.Failed, "Permission denied");
         }
         catch (Exception ex)
         {
@@ -1104,12 +1114,68 @@ public partial class CXFilesApp
             var infoPath = Path.Combine(_trash.TrashPath, "info", entry.TrashedName + ".trashinfo");
             if (File.Exists(infoPath)) File.Delete(infoPath);
         }
+        catch (UnauthorizedAccessException)
+        {
+            if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            {
+                PromptSudoDeleteFromTrash(entry);
+                return;
+            }
+            if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+            {
+                await ShowElevationHint("Delete");
+                return;
+            }
+            _ws.NotificationStateService.ShowNotification(
+                "Error", "Delete failed: Permission denied", SharpConsoleUI.Core.NotificationSeverity.Danger);
+        }
         catch (Exception ex)
         {
             _ws.NotificationStateService.ShowNotification(
                 "Error", $"Delete failed: {ex.Message}", SharpConsoleUI.Core.NotificationSeverity.Danger);
         }
         NavigateToTrash();
+    }
+
+    private void PromptSudoDeleteFromTrash(Models.TrashEntry entry)
+    {
+        var desc = $"Permanently delete \"{entry.TrashedName}\" from trash\n\n"
+            + "This requires elevated privileges (sudo rm).";
+
+        UI.Modals.SudoDialog.Show(desc, _ws, result =>
+        {
+            if (result.Cancelled || !result.Success) return;
+
+            var op = _operations.StartOperation(Services.OperationType.Delete, $"Deleting {entry.TrashedName} (sudo)");
+            UpdateStatusLine();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var path = Path.Combine(_trash.TrashPath, "files", entry.TrashedName);
+                    var isDir = Directory.Exists(path);
+                    var (ok, err) = await _sudo.DeleteAsync(path, isDir, result.Password, op.Cts.Token);
+                    if (!ok)
+                        throw new InvalidOperationException(err ?? "sudo delete failed");
+
+                    var infoPath = Path.Combine(_trash.TrashPath, "info", entry.TrashedName + ".trashinfo");
+                    try { File.Delete(infoPath); } catch { }
+
+                    _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                    _ws.EnqueueOnUIThread(NavigateToTrash);
+                }
+                catch (OperationCanceledException)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+                }
+                catch (Exception ex)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+                }
+                _ws.EnqueueOnUIThread(UpdateStatusLine);
+            });
+        });
     }
 
     private void PromptSudoRestore(Models.TrashEntry entry)
@@ -1173,11 +1239,77 @@ public partial class CXFilesApp
             await _trash.EmptyTrashAsync(CancellationToken.None);
             _operations.CompleteOperation(op, Services.OperationStatus.Completed);
         }
+        catch (UnauthorizedAccessException)
+        {
+            if (_sudo.IsSupported && _config.Config.AllowSudoElevation)
+            {
+                _operations.RemoveOperation(op);
+                PromptSudoEmptyTrash();
+                return;
+            }
+            if (_sudo.IsSupported && !_config.Config.SuppressSudoHint)
+            {
+                _operations.RemoveOperation(op);
+                await ShowElevationHint("Empty trash");
+                return;
+            }
+            _operations.CompleteOperation(op, Services.OperationStatus.Failed, "Permission denied");
+        }
         catch (Exception ex)
         {
             _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
         }
         NavigateToTrash();
+    }
+
+    private void PromptSudoEmptyTrash()
+    {
+        var desc = "Permanently delete all trash items\n\n"
+            + "Some items are owned by another user and require elevated privileges (sudo rm).";
+
+        UI.Modals.SudoDialog.Show(desc, _ws, result =>
+        {
+            if (result.Cancelled || !result.Success) return;
+
+            var op = _operations.StartOperation(Services.OperationType.Delete, "Emptying trash (sudo)");
+            UpdateStatusLine();
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var filesDir = Path.Combine(_trash.TrashPath, "files");
+                    var infoDir = Path.Combine(_trash.TrashPath, "info");
+
+                    foreach (var entry in Directory.EnumerateFileSystemEntries(filesDir))
+                    {
+                        op.Cts.Token.ThrowIfCancellationRequested();
+                        op.CurrentFile = Path.GetFileName(entry);
+
+                        var isDir = Directory.Exists(entry);
+                        var (ok, err) = await _sudo.DeleteAsync(entry, isDir, result.Password, op.Cts.Token);
+                        if (!ok)
+                            throw new InvalidOperationException(err ?? "sudo delete failed");
+
+                        // trashinfo is user-owned — no elevation needed.
+                        var info = Path.Combine(infoDir, Path.GetFileName(entry) + ".trashinfo");
+                        try { File.Delete(info); } catch { }
+                    }
+
+                    _operations.CompleteOperation(op, Services.OperationStatus.Completed);
+                    _ws.EnqueueOnUIThread(NavigateToTrash);
+                }
+                catch (OperationCanceledException)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Cancelled);
+                }
+                catch (Exception ex)
+                {
+                    _operations.CompleteOperation(op, Services.OperationStatus.Failed, ex.Message);
+                }
+                _ws.EnqueueOnUIThread(UpdateStatusLine);
+            });
+        });
     }
 
     private void AddToolbarButton(string label, Action action)

@@ -44,6 +44,19 @@ public class XdgTrashService : ITrashService
     }
 
     public Task TrashAsync(string path, CancellationToken ct)
+        => TrashWithMoverAsync(path, (src, dest, _) =>
+        {
+            if (Directory.Exists(src))
+                Directory.Move(src, dest);
+            else if (File.Exists(src))
+                File.Move(src, dest);
+            else
+                throw new FileNotFoundException("File not found", src);
+            return Task.CompletedTask;
+        }, ct);
+
+    public async Task TrashWithMoverAsync(
+        string path, Func<string, string, CancellationToken, Task> mover, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -53,21 +66,17 @@ public class XdgTrashService : ITrashService
         var destPath = Path.Combine(_filesDir, trashedName);
         var infoPath = Path.Combine(_infoDir, trashedName + ".trashinfo");
 
-        if (Directory.Exists(path))
-            Directory.Move(path, destPath);
-        else if (File.Exists(path))
-            File.Move(path, destPath);
-        else
-            throw new FileNotFoundException("File not found", path);
+        // Capture the original path before the move; afterwards it no longer exists.
+        var originalFullPath = Path.GetFullPath(path);
+
+        await mover(path, destPath, ct);
 
         var infoContent = $"""
             [Trash Info]
-            Path={Uri.EscapeDataString(Path.GetFullPath(path))}
+            Path={Uri.EscapeDataString(originalFullPath)}
             DeletionDate={DateTime.Now:yyyy-MM-ddTHH:mm:ss}
             """;
         File.WriteAllText(infoPath, infoContent);
-
-        return Task.CompletedTask;
     }
 
     public Task RestoreAsync(string trashedName, CancellationToken ct)
@@ -102,20 +111,30 @@ public class XdgTrashService : ITrashService
     {
         ct.ThrowIfCancellationRequested();
 
-        foreach (var file in Directory.EnumerateFiles(_filesDir))
+        bool permissionDenied = false;
+
+        // Delete each item together with its trashinfo, so items that can't be
+        // removed (e.g. root-owned) stay listed instead of becoming orphans.
+        foreach (var entry in Directory.EnumerateFileSystemEntries(_filesDir))
         {
             ct.ThrowIfCancellationRequested();
-            try { File.Delete(file); } catch { }
+            try
+            {
+                if (Directory.Exists(entry))
+                    Directory.Delete(entry, true);
+                else
+                    File.Delete(entry);
+
+                var info = Path.Combine(_infoDir, Path.GetFileName(entry) + ".trashinfo");
+                try { File.Delete(info); } catch { }
+            }
+            catch (UnauthorizedAccessException) { permissionDenied = true; }
+            catch { }
         }
-        foreach (var dir in Directory.EnumerateDirectories(_filesDir))
-        {
-            ct.ThrowIfCancellationRequested();
-            try { Directory.Delete(dir, true); } catch { }
-        }
-        foreach (var info in Directory.EnumerateFiles(_infoDir, "*.trashinfo"))
-        {
-            try { File.Delete(info); } catch { }
-        }
+
+        if (permissionDenied)
+            throw new UnauthorizedAccessException(
+                "Some trash items require elevated privileges to delete.");
 
         return Task.CompletedTask;
     }

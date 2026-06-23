@@ -22,6 +22,7 @@ public class OptionsModal : ModalBase<bool>
     private string _defaultPath;
     private int _maxTabs;
     private bool _allowSudo;
+    private bool _showSudoHint;
 
     private OptionsModal(ConsoleWindowSystem ws, IConfigService config, Window? parent)
         : base(ws, parent)
@@ -38,6 +39,7 @@ public class OptionsModal : ModalBase<bool>
         _defaultPath = config.Config.DefaultPath;
         _maxTabs = config.Config.MaxTabs;
         _allowSudo = config.Config.AllowSudoElevation;
+        _showSudoHint = !config.Config.SuppressSudoHint;
     }
 
     public static Task<bool> ShowAsync(ConsoleWindowSystem ws, IConfigService config, Window? parent = null)
@@ -101,6 +103,7 @@ public class OptionsModal : ModalBase<bool>
         _config.Config.DefaultPath = _defaultPath;
         _config.Config.MaxTabs = _maxTabs;
         _config.Config.AllowSudoElevation = _allowSudo;
+        _config.Config.SuppressSudoHint = !_showSudoHint;
         _config.Save();
         CloseWithResult(true);
     }
@@ -223,6 +226,20 @@ public class OptionsModal : ModalBase<bool>
             .AddEmptyLine()
             .AddLine("[dim]When disabled, permission errors are shown as")
             .AddLine("notifications without offering elevation.[/]")
+            .AddEmptyLine()
+            .Build());
+
+        var hintCheck = Controls.Checkbox("Show a hint when an operation needs elevation")
+            .Checked(_showSudoHint)
+            .Build();
+        hintCheck.CheckedChanged += (_, _) => _showSudoHint = hintCheck.Checked;
+        panel.AddControl(hintCheck);
+
+        panel.AddControl(Controls.Markup()
+            .AddEmptyLine()
+            .AddLine("[dim]Shows an explanatory dialog when elevation is disabled but")
+            .AddLine("a permission error occurs. Turn off to silence it (the same as")
+            .AddLine("checking \"Don't show this again\" in that dialog).[/]")
             .Build());
 
         if (!System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(

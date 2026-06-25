@@ -179,6 +179,5 @@ public class BreadcrumbBar
         _leftGrid.Columns[3].Visible = editing;  // input
         _editInput.Visible = editing;
         _left.Visible = !editing;
-        _container.Invalidate();
     }
 }

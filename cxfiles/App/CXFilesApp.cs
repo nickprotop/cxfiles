@@ -103,7 +103,6 @@ public partial class CXFilesApp
         tab.FileList.Control.DataSource = trashSource;
         UpdateStatusLine();
         UpdateToolbar();
-        _mainWindow?.Invalidate(true);
     }
 
     public void NavigateTo(string path)
@@ -274,7 +273,6 @@ public partial class CXFilesApp
             var page = _tabControl.GetTab(i);
             if (page != null) page.IsClosable = closable;
         }
-        _tabControl.Invalidate();
     }
 
     private void JumpToTab(int index)
@@ -320,7 +318,6 @@ public partial class CXFilesApp
         _config.Config.ShowDetailPanel = _detailVisible;
         _config.Save();
         UpdateStatusLine();
-        _mainWindow?.Invalidate(true);
     }
 
     private void OpenOrSwitchTerminal() => OpenTerminalAt(ActiveTab.Path);
@@ -431,7 +428,6 @@ public partial class CXFilesApp
 
         // Force layout recalculation so the terminal resizes to new panel dimensions
         _mainWindow?.ForceRebuildLayout();
-        _mainWindow?.Invalidate(true);
 
         // Focus the terminal so keystrokes go to it
         _mainWindow?.FocusManager?.SetFocus(_terminal, SharpConsoleUI.Controls.FocusReason.Keyboard);

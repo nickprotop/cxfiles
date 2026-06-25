@@ -21,14 +21,14 @@ public partial class CXFilesApp
     {
         if (_searchOverlayCenter == message) return;
         _searchOverlayCenter = message;
-        _mainWindow?.Invalidate(true);
+        _mainWindow?.Invalidate(SharpConsoleUI.Invalidation.Repaint);
     }
 
     private void SetSearchCorner(string? message)
     {
         if (_searchOverlayCorner == message) return;
         _searchOverlayCorner = message;
-        _mainWindow?.Invalidate(true);
+        _mainWindow?.Invalidate(SharpConsoleUI.Invalidation.Repaint);
     }
 
     private void PaintSearchOverlay(CharacterBuffer buffer, LayoutRect dirtyRegion, LayoutRect clipRect)

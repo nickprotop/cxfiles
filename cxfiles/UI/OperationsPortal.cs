@@ -93,7 +93,6 @@ internal class OperationsPortal : PortalContentContainer
         _ws.EnqueueOnUIThread(() =>
         {
             RebuildOperationRows();
-            Container?.Invalidate(true);
         });
     }
 

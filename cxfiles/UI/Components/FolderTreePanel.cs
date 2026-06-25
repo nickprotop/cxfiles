@@ -79,7 +79,6 @@ public class FolderTreePanel
                 .Replace("[cyan]", "[white on grey30]")
                 .Replace("[yellow]", "[white on grey30]")
                 .Replace("[dim]", "[dim on grey30]");
-            _tree.Container?.Invalidate(true);
 
             if (_bookmarkNodes.Contains(node))
                 BookmarkRightClicked?.Invoke(path, args);
@@ -206,7 +205,6 @@ public class FolderTreePanel
             _contextHighlightNode.Text = _contextHighlightOriginalText;
             _contextHighlightNode = null;
             _contextHighlightOriginalText = null;
-            _tree.Container?.Invalidate(true);
         }
     }
 
